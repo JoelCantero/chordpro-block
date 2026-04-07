@@ -20,6 +20,17 @@ if ( empty( $attributes['content'] ) ) {
 $raw_content = $attributes['content'];
 $storage_key = 'chordpro-block:' . md5( $raw_content );
 $chord_color = ! empty( $attributes['chordColor'] ) ? sanitize_hex_color( $attributes['chordColor'] ) : '';
+$show_title  = ! empty( $attributes['showTitle'] );
+$show_artist = ! empty( $attributes['showArtist'] );
+$font_family = ! empty( $attributes['fontFamily'] ) ? sanitize_text_field( $attributes['fontFamily'] ) : 'default';
+
+// Build font class based on selection
+$font_class = '';
+if ( 'roboto' === $font_family ) {
+	$font_class = 'chordpro-font-roboto';
+} elseif ( 'martian' === $font_family ) {
+	$font_class = 'chordpro-font-martian';
+}
 
 /**
  * Extract structured metadata and plain lyrics from raw ChordPro text.
@@ -167,7 +178,7 @@ $render_transpose_controls = static function () : string {
 		. esc_attr__( 'Transpose chords', 'chordpro-block' )
 		. '"><div class="chordpro-meta-key-row"><strong>'
 		. esc_html__( 'Transpose', 'chordpro-block' )
-		. '</strong><button type="button" class="chordpro-transpose-button" data-transpose-change="-1" aria-label="'
+		. ':</strong>&nbsp;<button type="button" class="chordpro-transpose-button" data-transpose-change="-1" aria-label="'
 		. esc_attr__( 'Lower one semitone', 'chordpro-block' )
 		. '">-</button><button type="button" class="chordpro-transpose-button" data-transpose-change="1" aria-label="'
 		. esc_attr__( 'Raise one semitone', 'chordpro-block' )
@@ -212,8 +223,9 @@ $translate_section_label_prefix = static function ( string $value ) : string {
  * @return string HTML fragment.
  */
 $controls_rendered = false;
+$open_section_count = 0;
 
-$parse_directive = static function ( string $directive ) use ( $render_transpose_controls, $translate_section_label_prefix, &$controls_rendered ) : string {
+$parse_directive = static function ( string $directive ) use ( $render_transpose_controls, $translate_section_label_prefix, &$controls_rendered, &$open_section_count, $show_title, $show_artist ) : string {
 	$colon_pos = strpos( $directive, ':' );
 
 	if ( false !== $colon_pos ) {
@@ -227,6 +239,9 @@ $parse_directive = static function ( string $directive ) use ( $render_transpose
 	switch ( $key ) {
 		case 'title':
 		case 't':
+			if ( ! $show_title ) {
+				return '';
+			}
 			return '<div class="chordpro-title">' . esc_html( $value ) . '</div>';
 
 		case 'subtitle':
@@ -234,6 +249,9 @@ $parse_directive = static function ( string $directive ) use ( $render_transpose
 			return '<div class="chordpro-subtitle">' . esc_html( $value ) . '</div>';
 
 		case 'artist':
+			if ( ! $show_artist ) {
+				return '';
+			}
 			return '<div class="chordpro-artist">' . esc_html( $value ) . '</div>';
 
 		case 'composer':
@@ -292,36 +310,51 @@ $parse_directive = static function ( string $directive ) use ( $render_transpose
 			$label = $value
 				? '<div class="chordpro-section-label">' . esc_html( $translate_section_label_prefix( $value ) ) . '</div>'
 				: '';
+			++$open_section_count;
 			return '<div class="chordpro-section chordpro-chorus">' . $label;
 		}
 
 		case 'end_of_chorus':
 		case 'eoc':
-			return '</div><!-- /chorus -->';
+			if ( $open_section_count > 0 ) {
+				--$open_section_count;
+				return '</div><!-- /chorus -->';
+			}
+			return '';
 
 		case 'start_of_verse':
 		case 'sov': {
 			$label = $value
 				? '<div class="chordpro-section-label">' . esc_html( $translate_section_label_prefix( $value ) ) . '</div>'
 				: '';
+			++$open_section_count;
 			return '<div class="chordpro-section chordpro-verse">' . $label;
 		}
 
 		case 'end_of_verse':
 		case 'eov':
-			return '</div><!-- /verse -->';
+			if ( $open_section_count > 0 ) {
+				--$open_section_count;
+				return '</div><!-- /verse -->';
+			}
+			return '';
 
 		case 'start_of_bridge':
 		case 'sob': {
 			$label = $value
 				? '<div class="chordpro-section-label">' . esc_html( $translate_section_label_prefix( $value ) ) . '</div>'
 				: '';
+			++$open_section_count;
 			return '<div class="chordpro-section chordpro-bridge">' . $label;
 		}
 
 		case 'end_of_bridge':
 		case 'eob':
-			return '</div><!-- /bridge -->';
+			if ( $open_section_count > 0 ) {
+				--$open_section_count;
+				return '</div><!-- /bridge -->';
+			}
+			return '';
 
 		case 'start_of_tab':
 		case 'sot':
@@ -361,10 +394,19 @@ $parse_chord_line = static function ( string $line ) : string {
 	foreach ( $matches as $match ) {
 		$original_chord = $match[1];
 		$lyric_segment  = $match[2];
+		$segment_length = mb_strlen( $lyric_segment );
 
-		$chord_markers .= '<p class="chordpro-chord" data-original-chord="' . esc_attr( $original_chord ) . '" style="left:' . esc_attr( (string) $lyric_position ) . 'ch">' . esc_html( $original_chord ) . '</p>';
+		$chord_markers .= '<p class="chordpro-chord" data-original-chord="' . esc_attr( $original_chord ) . '" data-lyric-segment-length="' . esc_attr( (string) $segment_length ) . '" style="left:' . esc_attr( (string) $lyric_position ) . 'ch">' . esc_html( $original_chord ) . '</p>';
 		$lyric_text    .= $lyric_segment;
-		$lyric_position += mb_strlen( $lyric_segment );
+
+		if ( $segment_length > 0 ) {
+			$lyric_position += $segment_length;
+		} else {
+			// Reserve room for back-to-back chords — add spaces to make room visible.
+			$reserved = mb_strlen( $original_chord ) + 1;
+			$lyric_position += $reserved;
+			$lyric_text    .= str_repeat( ' ', $reserved );
+		}
 	}
 
 	return '<div class="chordpro-line chordpro-line-annotated"><div class="chordpro-chords" aria-hidden="true">' . $chord_markers . '</div><p class="chordpro-lyric chordpro-lyric-full">' . esc_html( $lyric_text ) . '</p></div>';
@@ -376,7 +418,7 @@ $parse_chord_line = static function ( string $line ) : string {
  * @param string $text Raw ChordPro content.
  * @return string Rendered HTML.
  */
-$parse = static function ( string $text ) use ( $parse_directive, $parse_chord_line ) : string {
+$parse = static function ( string $text ) use ( $parse_directive, $parse_chord_line, &$open_section_count ) : string {
 	$lines  = explode( "\n", $text );
 	$html   = '';
 	$in_tab = false;
@@ -427,6 +469,11 @@ $parse = static function ( string $text ) use ( $parse_directive, $parse_chord_l
 		$html .= '<div class="chordpro-line"><p class="chordpro-lyric chordpro-lyric-plain">' . esc_html( $line ) . '</p></div>';
 	}
 
+	while ( $open_section_count > 0 ) {
+		$html .= '</div>';
+		--$open_section_count;
+	}
+
 	return $html;
 };
 
@@ -441,10 +488,11 @@ if ( ! $controls_rendered ) {
 // ---------------------------------------------------------------------------
 
 printf(
-	'<div %1$s data-transpose-storage-key="%2$s"><div class="chordpro-song"%5$s>%3$s</div>%4$s</div>',
+	'<div %1$s data-transpose-storage-key="%2$s"><div class="chordpro-song%6$s"%5$s>%3$s</div>%4$s</div>',
 	get_block_wrapper_attributes(),
 	esc_attr( $storage_key ),
 	$song_html,
 	$schema_json ? '<script type="application/ld+json">' . $schema_json . '</script>' : '',
-	$chord_color ? ' style="--chordpro-chord-color:' . esc_attr( $chord_color ) . ';"' : ''
+	$chord_color ? ' style="--chordpro-chord-color:' . esc_attr( $chord_color ) . ';"' : '',
+	$font_class ? ' ' . esc_attr( $font_class ) : ''
 );

@@ -94,3 +94,23 @@ msgstr "Comença a escriure la teva cançó a l'àrea de text de dalt usant nota
 #: src/edit.js
 msgid "Chords"
 msgstr "Acords"
+
+#: src/edit.js
+msgid "Display"
+msgstr "Visualització"
+
+#: src/edit.js
+msgid "Show song title"
+msgstr "Mostra el títol de la cançó"
+
+#: src/edit.js
+msgid "Display the title extracted from {title: ...} or {t: ...}."
+msgstr "Mostra el títol extret de {title: ...} o {t: ...}."
+
+#: src/edit.js
+msgid "Show song artist"
+msgstr "Mostra l'artista de la cançó"
+
+#: src/edit.js
+msgid "Display the artist extracted from {artist: ...}."
+msgstr "Mostra l'artista extret de {artist: ...}."

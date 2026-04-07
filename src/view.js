@@ -55,6 +55,34 @@ function transposeChord( chord, steps ) {
 	return transposed;
 }
 
+function recalculateLinePositions( line, offset ) {
+	const chords = Array.from( line.querySelectorAll( '.chordpro-chord[data-original-chord]' ) );
+
+	if ( chords.length === 0 ) {
+		return;
+	}
+
+	let position = 0;
+
+	chords.forEach( ( chord ) => {
+		const originalChord = chord.dataset.originalChord;
+		const segmentLength = parseInt( chord.dataset.lyricSegmentLength || '0' );
+		const transposed = transposeChord( originalChord, offset );
+
+		// Position this chord at the current position.
+		chord.style.left = `${ position }ch`;
+
+		// Advance by lyric segment length if present, otherwise reserve space for chord.
+		if ( segmentLength > 0 ) {
+			// Text follows the chord — advance by text length only.
+			position += segmentLength;
+		} else {
+			// No text after chord — reserve space: chord length + 1 minimum spacing.
+			position += Array.from( transposed ).length + 1;
+		}
+	} );
+}
+
 function formatOffset( offset ) {
 	if ( offset > 0 ) {
 		return `+${ offset }`;
@@ -119,8 +147,21 @@ function updateBlock( block, offset ) {
 	const chordNodes = block.querySelectorAll( '.chordpro-chord[data-original-chord]' );
 	const keyNode = block.querySelector( '[data-original-key]' );
 
+	// Update chords and recalculate positions per line to handle variable chord lengths.
+	const processedLines = new Set();
 	chordNodes.forEach( ( node ) => {
-		node.textContent = transposeChord( node.dataset.originalChord, offset );
+		const transposed = transposeChord( node.dataset.originalChord, offset );
+		node.textContent = transposed;
+
+		// Only recalculate positions when there's actual transposition (offset !== 0).
+		if ( offset !== 0 ) {
+			// Mark this chord's line for position recalculation.
+			const line = node.closest( '.chordpro-line-annotated' );
+			if ( line && ! processedLines.has( line ) ) {
+				processedLines.add( line );
+				recalculateLinePositions( line, offset );
+			}
+		}
 	} );
 
 	if ( keyNode ) {

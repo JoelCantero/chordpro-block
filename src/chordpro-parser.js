@@ -40,7 +40,7 @@ function translateSectionLabelPrefix( value ) {
 	return `${ translated }${ match[ 2 ] }`;
 }
 
-function parseDirective( raw ) {
+function parseDirective( raw, parserState, options ) {
 	const trimmed = raw.trim();
 	const colonPos = trimmed.indexOf( ':' );
 	let key, value;
@@ -56,11 +56,17 @@ function parseDirective( raw ) {
 	switch ( key ) {
 		case 'title':
 		case 't':
+			if ( ! options.showTitle ) {
+				return '';
+			}
 			return `<div class="chordpro-title">${ escapeHtml( value ) }</div>`;
 		case 'subtitle':
 		case 'st':
 			return `<div class="chordpro-subtitle">${ escapeHtml( value ) }</div>`;
 		case 'artist':
+			if ( ! options.showArtist ) {
+				return '';
+			}
 			return `<div class="chordpro-artist">${ escapeHtml( value ) }</div>`;
 		case 'composer':
 			return `<div class="chordpro-composer">${ escapeHtml( value ) }</div>`;
@@ -90,31 +96,46 @@ function parseDirective( raw ) {
 			const label = value
 				? `<div class="chordpro-section-label">${ escapeHtml( translateSectionLabelPrefix( value ) ) }</div>`
 				: '';
+			parserState.openSectionCount += 1;
 			return `<div class="chordpro-section chordpro-chorus">${ label }`;
 		}
 		case 'end_of_chorus':
 		case 'eoc':
-			return '</div><!-- /chorus -->';
+			if ( parserState.openSectionCount > 0 ) {
+				parserState.openSectionCount -= 1;
+				return '</div><!-- /chorus -->';
+			}
+			return '';
 		case 'start_of_verse':
 		case 'sov': {
 			const label = value
 				? `<div class="chordpro-section-label">${ escapeHtml( translateSectionLabelPrefix( value ) ) }</div>`
 				: '';
+			parserState.openSectionCount += 1;
 			return `<div class="chordpro-section chordpro-verse">${ label }`;
 		}
 		case 'end_of_verse':
 		case 'eov':
-			return '</div><!-- /verse -->';
+			if ( parserState.openSectionCount > 0 ) {
+				parserState.openSectionCount -= 1;
+				return '</div><!-- /verse -->';
+			}
+			return '';
 		case 'start_of_bridge':
 		case 'sob': {
 			const label = value
 				? `<div class="chordpro-section-label">${ escapeHtml( translateSectionLabelPrefix( value ) ) }</div>`
 				: '';
+			parserState.openSectionCount += 1;
 			return `<div class="chordpro-section chordpro-bridge">${ label }`;
 		}
 		case 'end_of_bridge':
 		case 'eob':
-			return '</div><!-- /bridge -->';
+			if ( parserState.openSectionCount > 0 ) {
+				parserState.openSectionCount -= 1;
+				return '</div><!-- /bridge -->';
+			}
+			return '';
 		case 'start_of_tab':
 		case 'sot':
 			return '<pre class="chordpro-tab">';
@@ -143,9 +164,18 @@ function parseChordLine( line ) {
 	const pattern = /\[([^\]]*)\]([^[]*)/g;
 	let match;
 	while ( ( match = pattern.exec( line ) ) !== null ) {
-		chordMarkers += `<p class="chordpro-chord" style="left:${ lyricPosition }ch">${ escapeHtml( match[ 1 ] ) }</p>`;
+		const segmentLength = Array.from( match[ 2 ] ).length;
+		chordMarkers += `<p class="chordpro-chord" data-original-chord="${ escapeHtml( match[ 1 ] ) }" data-lyric-segment-length="${ segmentLength }" style="left:${ lyricPosition }ch">${ escapeHtml( match[ 1 ] ) }</p>`;
 		lyricText += match[ 2 ];
-		lyricPosition += Array.from( match[ 2 ] ).length;
+
+		if ( segmentLength > 0 ) {
+			lyricPosition += segmentLength;
+		} else {
+			// Reserve room for consecutive chords without lyric text — add spaces to make room visible.
+			const reserved = Array.from( match[ 1 ] ).length + 1;
+			lyricPosition += reserved;
+			lyricText += ' '.repeat( reserved );
+		}
 	}
 
 	return `<div class="chordpro-line chordpro-line-annotated"><div class="chordpro-chords" aria-hidden="true">${ chordMarkers }</div><p class="chordpro-lyric chordpro-lyric-full">${ escapeHtml( lyricText ) }</p></div>`;
@@ -157,10 +187,17 @@ function parseChordLine( line ) {
  * @param {string} text Raw ChordPro text.
  * @return {string} HTML suitable for innerHTML / dangerouslySetInnerHTML.
  */
-export function parseChordPro( text ) {
+export function parseChordPro( text, options = {} ) {
+	const parserOptions = {
+		showTitle: options.showTitle ?? true,
+		showArtist: options.showArtist ?? true,
+	};
 	const lines = text.split( '\n' );
 	let html = '';
 	let inTab = false;
+	const parserState = {
+		openSectionCount: 0,
+	};
 
 	for ( const rawLine of lines ) {
 		const line = rawLine.replace( /\s+$/, '' ); // rtrim
@@ -179,7 +216,11 @@ export function parseChordPro( text ) {
 		// Directive line.
 		const directiveMatch = line.trim().match( /^\{([^}]+)\}$/ );
 		if ( directiveMatch ) {
-			const output = parseDirective( directiveMatch[ 1 ] );
+			const output = parseDirective(
+				directiveMatch[ 1 ],
+				parserState,
+				parserOptions
+			);
 			if ( output.startsWith( '<pre' ) ) {
 				inTab = true;
 			}
@@ -201,6 +242,11 @@ export function parseChordPro( text ) {
 
 		// Plain lyric line.
 		html += `<div class="chordpro-line"><p class="chordpro-lyric chordpro-lyric-plain">${ escapeHtml( line ) }</p></div>`;
+	}
+
+	while ( parserState.openSectionCount > 0 ) {
+		html += '</div>';
+		parserState.openSectionCount -= 1;
 	}
 
 	return html;

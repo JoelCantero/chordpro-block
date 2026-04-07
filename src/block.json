@@ -14,9 +14,21 @@
 			"type": "string",
 			"default": ""
 		},
+		"showTitle": {
+			"type": "boolean",
+			"default": false
+		},
+		"showArtist": {
+			"type": "boolean",
+			"default": false
+		},
 		"chordColor": {
 			"type": "string",
 			"default": "#c0392b"
+		},
+		"fontFamily": {
+			"type": "string",
+			"default": "default"
 		}
 	},
 	"supports": {

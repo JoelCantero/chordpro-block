@@ -6,6 +6,8 @@
  * colour / spacing / typography supports applied by WordPress.
  */
 
+@import './fonts.scss';
+
 .wp-block-chordpro-block-song {
 	.chordpro-transpose-controls {
 		display: flex;
@@ -45,6 +47,15 @@
 .chordpro-song {
 	font-family: "Courier New", Courier, monospace;
 	line-height: 1.4;
+
+	// Font family options
+	&.chordpro-font-roboto {
+		font-family: 'Roboto Mono', "Courier New", Courier, monospace;
+	}
+
+	&.chordpro-font-martian {
+		font-family: 'Martian Mono', "Courier New", Courier, monospace;
+	}
 
 	// -------------------------------------------------------------------------
 	// Song metadata

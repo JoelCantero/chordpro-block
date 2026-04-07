@@ -94,3 +94,23 @@ msgstr "Empieza a escribir tu canción en el área de texto de arriba usando not
 #: src/edit.js
 msgid "Chords"
 msgstr "Acordes"
+
+#: src/edit.js
+msgid "Display"
+msgstr "Visualización"
+
+#: src/edit.js
+msgid "Show song title"
+msgstr "Mostrar título de la canción"
+
+#: src/edit.js
+msgid "Display the title extracted from {title: ...} or {t: ...}."
+msgstr "Muestra el título extraído de {title: ...} o {t: ...}."
+
+#: src/edit.js
+msgid "Show song artist"
+msgstr "Mostrar artista de la canción"
+
+#: src/edit.js
+msgid "Display the artist extracted from {artist: ...}."
+msgstr "Muestra el artista extraído de {artist: ...}."
