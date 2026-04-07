@@ -1,0 +1,207 @@
+/**
+ * Shared styles: loaded on both the frontend and in the block editor.
+ *
+ * Target .chordpro-song which wraps all inner elements in render.php.
+ * The outer block wrapper (.wp-block-chordpro-block-song) receives
+ * colour / spacing / typography supports applied by WordPress.
+ */
+
+.wp-block-chordpro-block-song {
+	.chordpro-transpose-controls {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.45rem;
+	}
+
+	.chordpro-transpose-button,
+	.chordpro-transpose-reset {
+		appearance: none;
+		border: 1px solid #c9ced6;
+		background: #fff;
+		color: #1d2327;
+		border-radius: 999px;
+		padding: 0.35rem 0.8rem;
+		font: inherit;
+		font-size: 0.9rem;
+		line-height: 1.2;
+		cursor: pointer;
+		transition: background-color 120ms ease, border-color 120ms ease,
+			color 120ms ease;
+
+		&:hover {
+			background: #f6f7f7;
+			border-color: #8c8f94;
+		}
+
+		&:disabled {
+			opacity: 0.45;
+			cursor: default;
+		}
+	}
+
+}
+
+.chordpro-song {
+	font-family: "Courier New", Courier, monospace;
+	line-height: 1.4;
+
+	// -------------------------------------------------------------------------
+	// Song metadata
+	// -------------------------------------------------------------------------
+
+	.chordpro-title {
+		font-size: 1.6em;
+		font-weight: 700;
+		margin: 0 0 0.15em;
+	}
+
+	.chordpro-subtitle {
+		font-size: 1.15em;
+		color: #555;
+		margin: 0 0 0.15em;
+	}
+
+	.chordpro-artist,
+	.chordpro-composer,
+	.chordpro-lyricist {
+		color: #555;
+		margin: 0 0 0.1em;
+	}
+
+	.chordpro-meta {
+		font-size: 0.9em;
+		color: #777;
+		margin: 0 0 0.1em;
+	}
+
+	.chordpro-meta-key {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0;
+	}
+
+	.chordpro-meta-key-row {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		flex-wrap: wrap;
+	}
+
+	.chordpro-meta-value {
+		color: inherit;
+	}
+
+	// -------------------------------------------------------------------------
+	// Section labels & comments (e.g. {c: Verse 1})
+	// -------------------------------------------------------------------------
+
+	.chordpro-comment {
+		font-style: italic;
+		font-weight: 700;
+		color: #444;
+		margin: 1em 0 0.3em;
+	}
+
+	// -------------------------------------------------------------------------
+	// Sections: chorus / verse / bridge
+	// -------------------------------------------------------------------------
+
+	.chordpro-section {
+		margin: 0.5em 0;
+		padding: 0.5em 0 0.5em 1em;
+		border-left: 3px solid #ccc;
+	}
+
+	.chordpro-chorus {
+		border-left-color: #888;
+		background-color: rgba(0, 0, 0, 0.03);
+		border-radius: 0 4px 4px 0;
+	}
+
+	.chordpro-bridge {
+		border-left-color: #aaa;
+		font-style: italic;
+	}
+
+	.chordpro-section-label {
+		font-weight: 700;
+		margin-bottom: 0.25em;
+	}
+
+	// -------------------------------------------------------------------------
+	// Chord / lyric lines
+	// -------------------------------------------------------------------------
+
+	.chordpro-line {
+		display: block;
+		position: relative;
+		line-height: 1.2;
+		white-space: pre-wrap;
+	}
+
+	.chordpro-line-annotated {
+		padding-top: 1em;
+	}
+
+	.chordpro-chords {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 1.2em;
+		pointer-events: none;
+		font: inherit;
+		line-height: 1;
+	}
+
+	.chordpro-chord {
+		position: absolute;
+		color: var(--chordpro-chord-color, #c0392b);
+		font-weight: 700;
+		font-size: 1em;
+		white-space: pre;
+		margin: 0;
+		line-height: 1;
+		transform: scale(0.9);
+		transform-origin: left bottom;
+	}
+
+	.chordpro-lyric {
+		white-space: pre;
+		margin: 0;
+	}
+
+	.chordpro-lyric-plain {
+		display: inline;
+	}
+
+	.chordpro-lyric-full {
+		display: block;
+	}
+
+	// -------------------------------------------------------------------------
+	// Guitar-tab section
+	// -------------------------------------------------------------------------
+
+	.chordpro-tab {
+		background-color: #f8f8f8;
+		border: 1px solid #e0e0e0;
+		border-radius: 4px;
+		padding: 1em;
+		overflow-x: auto;
+		font-family: "Courier New", Courier, monospace;
+		font-size: 0.9em;
+		line-height: 1.5;
+		margin: 0.5em 0;
+	}
+
+	// -------------------------------------------------------------------------
+	// Visual spacers (empty lines in the source)
+	// -------------------------------------------------------------------------
+
+	.chordpro-spacer {
+		height: 0.75em;
+	}
+}

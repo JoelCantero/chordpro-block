@@ -1,0 +1,15 @@
+{
+	"name": "chordpro-block",
+	"version": "1.0.0",
+	"description": "WordPress Gutenberg block for ChordPro song notation",
+	"scripts": {
+		"build": "wp-scripts build",
+		"start": "wp-scripts start",
+		"lint:js": "wp-scripts lint-js",
+		"packages-update": "wp-scripts packages-update"
+	},
+	"devDependencies": {
+		"@wordpress/scripts": "^30.0.0",
+		"gettext-parser": "^8.0.0"
+	}
+}

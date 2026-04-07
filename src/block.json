@@ -1,0 +1,43 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "chordpro-block/song",
+	"version": "1.0.0",
+	"title": "ChordPro",
+	"category": "text",
+	"icon": "format-audio",
+	"description": "Display songs with chords and lyrics formatted in ChordPro notation. Chords appear above the corresponding syllable in the classic lead-sheet style.",
+	"keywords": [ "music", "chords", "song", "chordpro", "lyrics", "guitar" ],
+	"textdomain": "chordpro-block",
+	"attributes": {
+		"content": {
+			"type": "string",
+			"default": ""
+		},
+		"chordColor": {
+			"type": "string",
+			"default": "#c0392b"
+		}
+	},
+	"supports": {
+		"html": false,
+		"align": [ "wide", "full" ],
+		"color": {
+			"background": true,
+			"text": true
+		},
+		"typography": {
+			"fontSize": true,
+			"lineHeight": true
+		},
+		"spacing": {
+			"padding": true,
+			"margin": true
+		}
+	},
+	"editorScript": "file:./index.js",
+	"editorStyle": "file:./index.css",
+	"viewScript": "file:./view.js",
+	"style": "file:./style-index.css",
+	"render": "file:./render.php"
+}

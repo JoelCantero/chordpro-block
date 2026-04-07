@@ -1,0 +1,31 @@
+/**
+ * Editor-only styles — not loaded on the frontend.
+ * Applied to the block's editor wrapper.
+ */
+
+.wp-block-chordpro-block-song {
+	// Textarea input area.
+	.chordpro-editor__textarea {
+		textarea {
+			font-family: "Courier New", Courier, monospace;
+			font-size: 0.9em;
+			width: 100%;
+			resize: vertical;
+		}
+	}
+
+	// Preview section divider inside the editor.
+	.chordpro-editor__preview {
+		border-top: 1px solid #e0e0e0;
+		padding-top: 1em;
+		margin-top: 0.5em;
+	}
+
+	.chordpro-editor__preview-label {
+		font-size: 0.75em;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: #888;
+		margin: 0 0 0.5em;
+	}
+}
