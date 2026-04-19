@@ -220,15 +220,15 @@ $schema_json = wp_json_encode( $schema_graph, JSON_UNESCAPED_UNICODE | JSON_UNES
 $render_transpose_controls = static function () : string {
 	return '<div class="chordpro-transpose-controls" role="group" aria-label="'
 		. esc_attr__( 'Transpose chords', 'chordpro-block' )
-		. '"><div class="chordpro-meta-key-row"><strong>'
+		. '"><strong class="chordpro-meta-label">'
 		. esc_html__( 'Transpose', 'chordpro-block' )
-		. ':</strong>&nbsp;<button type="button" class="chordpro-transpose-button" data-transpose-change="-1" aria-label="'
+		. ':</strong><button type="button" class="chordpro-transpose-button" data-transpose-change="-1" aria-label="'
 		. esc_attr__( 'Lower one semitone', 'chordpro-block' )
 		. '">-</button><button type="button" class="chordpro-transpose-button" data-transpose-change="1" aria-label="'
 		. esc_attr__( 'Raise one semitone', 'chordpro-block' )
 		. '">+</button><button type="button" class="chordpro-transpose-reset" data-transpose-reset>'
 		. esc_html__( 'Reset', 'chordpro-block' )
-		. '</button></div></div>';
+		. '</button></div>';
 };
 
 /**
@@ -280,6 +280,119 @@ $extract_structural_directive = static function ( string $line ) : ?string {
 };
 
 /**
+ * Split a directive into normalized key/value parts.
+ *
+ * @param string $directive Raw directive text without outer braces.
+ * @return array{key:string,value:string}
+ */
+$get_directive_parts = static function ( string $directive ) : array {
+	$colon_pos = strpos( $directive, ':' );
+
+	if ( false !== $colon_pos ) {
+		return array(
+			'key'   => strtolower( trim( substr( $directive, 0, $colon_pos ) ) ),
+			'value' => trim( substr( $directive, $colon_pos + 1 ) ),
+		);
+	}
+
+	return array(
+		'key'   => strtolower( trim( $directive ) ),
+		'value' => '',
+	);
+};
+
+/**
+ * Map directive aliases to their canonical top-matter key.
+ *
+ * @param string $key Raw directive key.
+ * @return string
+ */
+$normalize_top_matter_key = static function ( string $key ) : string {
+	switch ( $key ) {
+		case 't':
+			return 'title';
+		case 'st':
+			return 'subtitle';
+		default:
+			return $key;
+	}
+};
+
+/**
+ * Determine whether a directive belongs to the top metadata block.
+ *
+ * @param string $key Raw directive key.
+ * @return bool
+ */
+$is_top_matter_directive_key = static function ( string $key ) : bool {
+	return in_array(
+		$key,
+		array(
+			'title',
+			't',
+			'subtitle',
+			'st',
+			'artist',
+			'composer',
+			'lyricist',
+			'tempo',
+			'key',
+			'capo',
+			'time',
+			'duration',
+		),
+		true
+	);
+};
+
+/**
+ * Determine whether a directive belongs in the compact metadata row.
+ *
+ * @param string $key Raw directive key.
+ * @return bool
+ */
+$is_meta_row_directive_key = static function ( string $key ) use ( $normalize_top_matter_key ) : bool {
+	return in_array(
+		$normalize_top_matter_key( $key ),
+		array( 'tempo', 'key', 'capo', 'time', 'duration' ),
+		true
+	);
+};
+
+/**
+ * Return the display priority for top-matter directives.
+ *
+ * @param string $key Raw directive key.
+ * @return int
+ */
+$get_top_matter_priority = static function ( string $key ) use ( $normalize_top_matter_key ) : int {
+	switch ( $normalize_top_matter_key( $key ) ) {
+		case 'title':
+			return 0;
+		case 'subtitle':
+			return 1;
+		case 'artist':
+			return 2;
+		case 'composer':
+			return 3;
+		case 'lyricist':
+			return 4;
+		case 'tempo':
+			return 5;
+		case 'key':
+			return 6;
+		case 'capo':
+			return 7;
+		case 'time':
+			return 8;
+		case 'duration':
+			return 9;
+		default:
+			return 100;
+	}
+};
+
+/**
  * Parse a raw directive string (content inside {…}) and return HTML.
  *
  * @param string $directive Raw directive, e.g. "t: Amazing Grace" or "soc".
@@ -287,17 +400,68 @@ $extract_structural_directive = static function ( string $line ) : ?string {
  */
 $controls_rendered = false;
 $open_section_count = 0;
+$pending_top_matter = array();
+$top_matter_flushed = false;
 
-$parse_directive = static function ( string $directive ) use ( $render_transpose_controls, $translate_section_label_prefix, &$controls_rendered, &$open_section_count, $show_title, $show_artist ) : string {
-	$colon_pos = strpos( $directive, ':' );
-
-	if ( false !== $colon_pos ) {
-		$key   = strtolower( trim( substr( $directive, 0, $colon_pos ) ) );
-		$value = trim( substr( $directive, $colon_pos + 1 ) );
-	} else {
-		$key   = strtolower( trim( $directive ) );
-		$value = '';
+$flush_top_matter = static function () use ( $render_transpose_controls, &$controls_rendered, &$pending_top_matter, &$top_matter_flushed ) : string {
+	if ( $top_matter_flushed ) {
+		return '';
 	}
+
+	$top_matter_flushed = true;
+
+	if ( empty( $pending_top_matter ) ) {
+		return '';
+	}
+
+	$has_meta_row_items = count(
+		array_filter(
+			$pending_top_matter,
+			static function ( array $item ) : bool {
+				return 'meta_row' === $item['group'];
+			}
+		)
+	) > 0;
+
+	usort(
+		$pending_top_matter,
+		static function ( array $first, array $second ) : int {
+			if ( $first['priority'] === $second['priority'] ) {
+				return $first['order'] <=> $second['order'];
+			}
+
+			return $first['priority'] <=> $second['priority'];
+		}
+	);
+
+	$html = '';
+	$meta_row_items = array();
+
+	foreach ( $pending_top_matter as $item ) {
+		if ( 'meta_row' === $item['group'] ) {
+			$meta_row_items[] = $item['html'];
+			continue;
+		}
+
+		$html .= $item['html'];
+	}
+
+	if ( ! empty( $meta_row_items ) ) {
+		$html .= '<div class="chordpro-meta-bar">' . implode( '', $meta_row_items ) . '</div>';
+	}
+
+	if ( $has_meta_row_items && ! $controls_rendered ) {
+		$html .= '<div class="chordpro-transpose-row">' . $render_transpose_controls() . '</div>';
+		$controls_rendered = true;
+	}
+
+	return $html;
+};
+
+$parse_directive = static function ( string $directive ) use ( $get_directive_parts, $render_transpose_controls, $translate_section_label_prefix, &$controls_rendered, &$open_section_count, $show_title, $show_artist ) : string {
+	$parts = $get_directive_parts( $directive );
+	$key   = $parts['key'];
+	$value = $parts['value'];
 
 	switch ( $key ) {
 		case 'title':
@@ -324,36 +488,29 @@ $parse_directive = static function ( string $directive ) use ( $render_transpose
 			return '<div class="chordpro-lyricist">' . esc_html( $value ) . '</div>';
 
 		case 'key':
-			$controls = '';
-
-			if ( ! $controls_rendered ) {
-				$controls          = $render_transpose_controls();
-				$controls_rendered = true;
-			}
-
-			return '<div class="chordpro-meta chordpro-meta-key"><div class="chordpro-meta-key-row"><strong>'
+			return '<div class="chordpro-meta"><strong class="chordpro-meta-label">'
 				. esc_html_x( 'Key', 'musical key label', 'chordpro-block' )
-				. ':</strong> <span class="chordpro-meta-value" data-original-key="' . esc_attr( $value ) . '">' . esc_html( $value ) . '</span></div>' . $controls . '</div>';
+				. ':</strong><span class="chordpro-meta-value" data-original-key="' . esc_attr( $value ) . '">' . esc_html( $value ) . '</span></div>';
 
 		case 'capo':
-			return '<div class="chordpro-meta"><strong>'
+			return '<div class="chordpro-meta"><strong class="chordpro-meta-label">'
 				. esc_html_x( 'Capo', 'guitar capo position', 'chordpro-block' )
-				. ':</strong> ' . esc_html( $value ) . '</div>';
+				. ':</strong><span class="chordpro-meta-value">' . esc_html( $value ) . '</span></div>';
 
 		case 'tempo':
-			return '<div class="chordpro-meta"><strong>'
+			return '<div class="chordpro-meta"><strong class="chordpro-meta-label">'
 				. esc_html__( 'Tempo', 'chordpro-block' )
-				. ':</strong> ' . esc_html( $value ) . '</div>';
+				. ':</strong><span class="chordpro-meta-value">' . esc_html( $value ) . '</span></div>';
 
 		case 'time':
-			return '<div class="chordpro-meta"><strong>'
+			return '<div class="chordpro-meta"><strong class="chordpro-meta-label">'
 				. esc_html__( 'Time', 'chordpro-block' )
-				. ':</strong> ' . esc_html( $value ) . '</div>';
+				. ':</strong><span class="chordpro-meta-value">' . esc_html( $value ) . '</span></div>';
 
 		case 'duration':
-			return '<div class="chordpro-meta"><strong>'
+			return '<div class="chordpro-meta"><strong class="chordpro-meta-label">'
 				. esc_html__( 'Duration', 'chordpro-block' )
-				. ':</strong> ' . esc_html( $value ) . '</div>';
+				. ':</strong><span class="chordpro-meta-value">' . esc_html( $value ) . '</span></div>';
 
 		case 'comment':
 		case 'c':
@@ -484,7 +641,7 @@ $parse_chord_line = static function ( string $line ) : string {
  * @param string $text Raw ChordPro content.
  * @return string Rendered HTML.
  */
-$parse = static function ( string $text ) use ( $parse_directive, $parse_chord_line, $extract_structural_directive, &$open_section_count ) : string {
+$parse = static function ( string $text ) use ( $parse_directive, $parse_chord_line, $extract_structural_directive, $get_directive_parts, $is_top_matter_directive_key, $is_meta_row_directive_key, $get_top_matter_priority, $flush_top_matter, &$pending_top_matter, &$top_matter_flushed, &$open_section_count ) : string {
 	$lines  = explode( "\n", $text );
 	$html   = '';
 	$in_tab = false;
@@ -506,6 +663,8 @@ $parse = static function ( string $text ) use ( $parse_directive, $parse_chord_l
 		// Structural directives accept both ChordPro braces and a bracket-only fallback.
 		$structural_directive = $extract_structural_directive( $line );
 		if ( null !== $structural_directive ) {
+			$html .= $flush_top_matter();
+
 			$colon = strpos( $structural_directive, ':' );
 			$key   = strtolower( trim( false !== $colon ? substr( $structural_directive, 0, $colon ) : $structural_directive ) );
 			$output = $parse_directive( $structural_directive );
@@ -520,9 +679,24 @@ $parse = static function ( string $text ) use ( $parse_directive, $parse_chord_l
 
 		// Directive line: {key} or {key: value}.
 		if ( preg_match( '/^\{([^}]+)\}$/', trim( $line ), $m ) ) {
-			// Determine key to track tab state without depending on HTML output.
-			$colon = strpos( $m[1], ':' );
-			$key   = strtolower( trim( false !== $colon ? substr( $m[1], 0, $colon ) : $m[1] ) );
+			$parts = $get_directive_parts( $m[1] );
+			$key   = $parts['key'];
+
+			if ( ! $top_matter_flushed && $is_top_matter_directive_key( $key ) ) {
+				$output = $parse_directive( $m[1] );
+
+				if ( '' !== $output ) {
+					$pending_top_matter[] = array(
+						'html'     => $output,
+						'priority' => $get_top_matter_priority( $key ),
+						'order'    => count( $pending_top_matter ),
+						'group'    => $is_meta_row_directive_key( $key ) ? 'meta_row' : 'default',
+					);
+				}
+				continue;
+			}
+
+			$html .= $flush_top_matter();
 
 			$output = $parse_directive( $m[1] );
 
@@ -536,19 +710,24 @@ $parse = static function ( string $text ) use ( $parse_directive, $parse_chord_l
 
 		// Empty line → visual spacer.
 		if ( '' === trim( $line ) ) {
+			$html .= $flush_top_matter();
 			$html .= '<div class="chordpro-spacer"></div>';
 			continue;
 		}
 
 		// Chord line (contains at least one [...]).
 		if ( false !== strpos( $line, '[' ) ) {
+			$html .= $flush_top_matter();
 			$html .= $parse_chord_line( $line );
 			continue;
 		}
 
 		// Plain lyric line (no chords).
+		$html .= $flush_top_matter();
 		$html .= '<div class="chordpro-line"><p class="chordpro-lyric chordpro-lyric-plain">' . esc_html( $line ) . '</p></div>';
 	}
+
+	$html .= $flush_top_matter();
 
 	while ( $open_section_count > 0 ) {
 		$html .= '</div>';
