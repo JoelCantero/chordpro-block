@@ -111,21 +111,110 @@ function measureTextWidth( text, font ) {
 	return context.measureText( text ).width;
 }
 
+function getCodeUnitOffsets( text ) {
+	const offsets = [ 0 ];
+	let total = 0;
+
+	for ( const char of text ) {
+		total += char.length;
+		offsets.push( total );
+	}
+
+	return offsets;
+}
+
+function getAnchorMetrics( lyricNode, lyricChars, codeUnitOffsets, position ) {
+	const textNode = lyricNode.firstChild;
+
+	if ( ! textNode || textNode.nodeType !== 3 ) {
+		return null;
+	}
+
+	if ( lyricChars.length === 0 ) {
+		return { left: 0, top: 0 };
+	}
+
+	const safePosition = Math.max( 0, Math.min( position, lyricChars.length ) );
+	const lyricRect = lyricNode.getBoundingClientRect();
+	const range = document.createRange();
+
+	range.setStart( textNode, codeUnitOffsets[ safePosition ] );
+	range.collapse( true );
+
+	const caretRect = Array.from( range.getClientRects() ).find(
+		( currentRect ) => currentRect.width >= 0 || currentRect.height > 0
+	);
+
+	if ( caretRect ) {
+		return {
+			left: caretRect.left - lyricRect.left,
+			top: caretRect.top - lyricRect.top,
+		};
+	}
+
+	if ( safePosition < lyricChars.length ) {
+		range.setStart( textNode, codeUnitOffsets[ safePosition ] );
+		range.setEnd( textNode, codeUnitOffsets[ safePosition + 1 ] );
+
+		const rect = Array.from( range.getClientRects() ).find(
+			( currentRect ) => currentRect.width > 0 || currentRect.height > 0
+		);
+
+		if ( rect ) {
+			return {
+				left: rect.left - lyricRect.left,
+				top: rect.top - lyricRect.top,
+			};
+		}
+	}
+
+	if ( safePosition > 0 ) {
+		range.setStart( textNode, codeUnitOffsets[ safePosition - 1 ] );
+		range.setEnd( textNode, codeUnitOffsets[ safePosition ] );
+
+		const rects = Array.from( range.getClientRects() ).filter(
+			( currentRect ) => currentRect.width > 0 || currentRect.height > 0
+		);
+		const rect = rects[ rects.length - 1 ];
+
+		if ( rect ) {
+			return {
+				left: rect.right - lyricRect.left,
+				top: rect.top - lyricRect.top,
+			};
+		}
+	}
+
+	return null;
+}
+
 function recalculateLinePositions( line, offset ) {
 	const chords = Array.from(
 		line.querySelectorAll( '.chordpro-chord[data-original-chord]' )
 	);
+	const chordsContainer = line.querySelector( '.chordpro-chords' );
 	const lyricNode = line.querySelector( '.chordpro-lyric' );
 
-	if ( chords.length === 0 || ! lyricNode ) {
+	if ( chords.length === 0 || ! lyricNode || ! chordsContainer ) {
 		return;
 	}
 
 	const lyricText = lyricNode.textContent || '';
 	const lyricChars = Array.from( lyricText );
+	const codeUnitOffsets = getCodeUnitOffsets( lyricText );
 	const lyricFont = getNodeFont( lyricNode );
 	const chordFont = getNodeFont( chords[ 0 ] );
 	const chordGap = measureTextWidth( ' ', chordFont );
+	const lyricLineHeight = parseFloat(
+		window.getComputedStyle( lyricNode ).lineHeight
+	);
+	const mobileLayout = window.matchMedia( '(max-width: 600px)' ).matches;
+	const lyricHeight = lyricNode.getBoundingClientRect().height;
+	const wrappedLyric =
+		mobileLayout &&
+		Number.isFinite( lyricLineHeight ) &&
+		lyricHeight > lyricLineHeight * 1.5;
+	const positionedChords = [];
 	let previousBaseLyricPosition = null;
 	let chordOffset = 0;
 
@@ -145,10 +234,39 @@ function recalculateLinePositions( line, offset ) {
 			chordOffset = 0;
 		}
 
+		const anchorMetrics = getAnchorMetrics(
+			lyricNode,
+			lyricChars,
+			codeUnitOffsets,
+			baseLyricPosition
+		);
 		const lyricPrefix = lyricChars.slice( 0, baseLyricPosition ).join( '' );
-		const anchorLeft = measureTextWidth( lyricPrefix, lyricFont );
+		const fallbackLeft = measureTextWidth( lyricPrefix, lyricFont );
+		const anchorLeft = anchorMetrics?.left ?? fallbackLeft;
+		const visualRow =
+			mobileLayout && Number.isFinite( lyricLineHeight )
+				? Math.max(
+						0,
+						Math.round(
+							( anchorMetrics?.top ?? 0 ) / lyricLineHeight
+						)
+				  )
+				: 0;
+		let anchorTop = 0;
+
+		if (
+			mobileLayout &&
+			Number.isFinite( lyricLineHeight ) &&
+			wrappedLyric
+		) {
+			anchorTop = visualRow * lyricLineHeight + 3;
+		}
+
+		const rowKey = wrappedLyric ? visualRow : 0;
 
 		chord.style.left = `${ anchorLeft + chordOffset }px`;
+		chord.style.top = `${ anchorTop }px`;
+		positionedChords.push( { chord, rowKey } );
 
 		if ( segmentLength > 0 ) {
 			chordOffset = 0;
@@ -160,6 +278,32 @@ function recalculateLinePositions( line, offset ) {
 		if ( segmentLength === 0 ) {
 			previousBaseLyricPosition = baseLyricPosition;
 		}
+	} );
+
+	const containerRect = chordsContainer.getBoundingClientRect();
+	const previousRightByRow = new Map();
+
+	positionedChords.forEach( ( { chord, rowKey } ) => {
+		const previousRight = previousRightByRow.get( rowKey );
+		const chordRect = chord.getBoundingClientRect();
+		const chordLeft = chordRect.left - containerRect.left;
+
+		if (
+			typeof previousRight === 'number' &&
+			chordLeft < previousRight + chordGap
+		) {
+			const currentLeft = parseFloat( chord.style.left || '0' );
+			const nextLeft =
+				currentLeft + ( previousRight + chordGap - chordLeft );
+
+			chord.style.left = `${ nextLeft }px`;
+		}
+
+		const resolvedRect = chord.getBoundingClientRect();
+		previousRightByRow.set(
+			rowKey,
+			resolvedRect.right - containerRect.left
+		);
 	} );
 }
 

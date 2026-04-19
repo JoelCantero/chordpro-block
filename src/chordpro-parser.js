@@ -53,18 +53,100 @@ function extractStructuralDirective( line ) {
 	return match[ 1 ].trim();
 }
 
-function parseDirective( raw, parserState, options ) {
+function getDirectiveParts( raw ) {
 	const trimmed = raw.trim();
 	const colonPos = trimmed.indexOf( ':' );
-	let key, value;
 
 	if ( colonPos >= 0 ) {
-		key = trimmed.substring( 0, colonPos ).trim().toLowerCase();
-		value = trimmed.substring( colonPos + 1 ).trim();
-	} else {
-		key = trimmed.toLowerCase();
-		value = '';
+		return {
+			key: trimmed.substring( 0, colonPos ).trim().toLowerCase(),
+			value: trimmed.substring( colonPos + 1 ).trim(),
+		};
 	}
+
+	return {
+		key: trimmed.toLowerCase(),
+		value: '',
+	};
+}
+
+function normalizeTopMatterKey( key ) {
+	switch ( key ) {
+		case 't':
+			return 'title';
+		case 'st':
+			return 'subtitle';
+		default:
+			return key;
+	}
+}
+
+function isTopMatterDirectiveKey( key ) {
+	return [
+		'title',
+		't',
+		'subtitle',
+		'st',
+		'artist',
+		'composer',
+		'lyricist',
+		'tempo',
+		'key',
+		'capo',
+		'time',
+		'duration',
+	].includes( key );
+}
+
+function getTopMatterPriority( key ) {
+	switch ( normalizeTopMatterKey( key ) ) {
+		case 'title':
+			return 0;
+		case 'subtitle':
+			return 1;
+		case 'artist':
+			return 2;
+		case 'composer':
+			return 3;
+		case 'lyricist':
+			return 4;
+		case 'tempo':
+			return 5;
+		case 'key':
+			return 6;
+		case 'capo':
+			return 7;
+		case 'time':
+			return 8;
+		case 'duration':
+			return 9;
+		default:
+			return 100;
+	}
+}
+
+function flushTopMatter( parserState ) {
+	if ( parserState.topMatterFlushed ) {
+		return '';
+	}
+
+	parserState.topMatterFlushed = true;
+
+	if ( parserState.pendingTopMatter.length === 0 ) {
+		return '';
+	}
+
+	return parserState.pendingTopMatter
+		.sort(
+			( first, second ) =>
+				first.priority - second.priority || first.order - second.order
+		)
+		.map( ( item ) => item.html )
+		.join( '' );
+}
+
+function parseDirective( raw, parserState, options ) {
+	const { key, value } = getDirectiveParts( raw );
 
 	switch ( key ) {
 		case 'title':
@@ -94,27 +176,35 @@ function parseDirective( raw, parserState, options ) {
 				value
 			) }</div>`;
 		case 'key':
-			return `<div class="chordpro-meta chordpro-meta-key"><div class="chordpro-meta-key-row"><strong>${ escapeHtml(
+			return `<div class="chordpro-meta"><strong class="chordpro-meta-label">${ escapeHtml(
 				_x( 'Key', 'musical key label', 'chordpro-block' )
-			) }:</strong> <span class="chordpro-meta-value" data-original-key="${ escapeHtml(
+			) }:</strong><span class="chordpro-meta-value" data-original-key="${ escapeHtml(
 				value
-			) }">${ escapeHtml( value ) }</span></div></div>`;
+			) }">${ escapeHtml( value ) }</span></div>`;
 		case 'capo':
-			return `<div class="chordpro-meta"><strong>${ escapeHtml(
+			return `<div class="chordpro-meta"><strong class="chordpro-meta-label">${ escapeHtml(
 				_x( 'Capo', 'guitar capo position', 'chordpro-block' )
-			) }:</strong> ${ escapeHtml( value ) }</div>`;
+			) }:</strong><span class="chordpro-meta-value">${ escapeHtml(
+				value
+			) }</span></div>`;
 		case 'tempo':
-			return `<div class="chordpro-meta"><strong>${ escapeHtml(
+			return `<div class="chordpro-meta"><strong class="chordpro-meta-label">${ escapeHtml(
 				__( 'Tempo', 'chordpro-block' )
-			) }:</strong> ${ escapeHtml( value ) }</div>`;
+			) }:</strong><span class="chordpro-meta-value">${ escapeHtml(
+				value
+			) }</span></div>`;
 		case 'time':
-			return `<div class="chordpro-meta"><strong>${ escapeHtml(
+			return `<div class="chordpro-meta"><strong class="chordpro-meta-label">${ escapeHtml(
 				__( 'Time', 'chordpro-block' )
-			) }:</strong> ${ escapeHtml( value ) }</div>`;
+			) }:</strong><span class="chordpro-meta-value">${ escapeHtml(
+				value
+			) }</span></div>`;
 		case 'duration':
-			return `<div class="chordpro-meta"><strong>${ escapeHtml(
+			return `<div class="chordpro-meta"><strong class="chordpro-meta-label">${ escapeHtml(
 				__( 'Duration', 'chordpro-block' )
-			) }:</strong> ${ escapeHtml( value ) }</div>`;
+			) }:</strong><span class="chordpro-meta-value">${ escapeHtml(
+				value
+			) }</span></div>`;
 		case 'comment':
 		case 'c':
 			return `<div class="chordpro-comment">${ escapeHtml(
@@ -255,6 +345,8 @@ export function parseChordPro( text, options = {} ) {
 	let inTab = false;
 	const parserState = {
 		openSectionCount: 0,
+		pendingTopMatter: [],
+		topMatterFlushed: false,
 	};
 
 	for ( const rawLine of lines ) {
@@ -274,6 +366,8 @@ export function parseChordPro( text, options = {} ) {
 		// Structural directives accept both ChordPro braces and a bracket-only fallback.
 		const structuralDirective = extractStructuralDirective( line );
 		if ( structuralDirective ) {
+			html += flushTopMatter( parserState );
+
 			const output = parseDirective(
 				structuralDirective,
 				parserState,
@@ -289,6 +383,30 @@ export function parseChordPro( text, options = {} ) {
 		// Directive line.
 		const directiveMatch = line.trim().match( /^\{([^}]+)\}$/ );
 		if ( directiveMatch ) {
+			const { key } = getDirectiveParts( directiveMatch[ 1 ] );
+
+			if (
+				! parserState.topMatterFlushed &&
+				isTopMatterDirectiveKey( key )
+			) {
+				const output = parseDirective(
+					directiveMatch[ 1 ],
+					parserState,
+					parserOptions
+				);
+
+				if ( output ) {
+					parserState.pendingTopMatter.push( {
+						html: output,
+						priority: getTopMatterPriority( key ),
+						order: parserState.pendingTopMatter.length,
+					} );
+				}
+				continue;
+			}
+
+			html += flushTopMatter( parserState );
+
 			const output = parseDirective(
 				directiveMatch[ 1 ],
 				parserState,
@@ -308,21 +426,26 @@ export function parseChordPro( text, options = {} ) {
 
 		// Empty line → visual spacer.
 		if ( line.trim() === '' ) {
+			html += flushTopMatter( parserState );
 			html += '<div class="chordpro-spacer"></div>';
 			continue;
 		}
 
 		// Chord line (contains at least one [...]).
 		if ( line.includes( '[' ) ) {
+			html += flushTopMatter( parserState );
 			html += parseChordLine( line );
 			continue;
 		}
 
 		// Plain lyric line.
+		html += flushTopMatter( parserState );
 		html += `<div class="chordpro-line"><p class="chordpro-lyric chordpro-lyric-plain">${ escapeHtml(
 			line
 		) }</p></div>`;
 	}
+
+	html += flushTopMatter( parserState );
 
 	while ( parserState.openSectionCount > 0 ) {
 		html += '</div>';

@@ -11,9 +11,12 @@
 .wp-block-chordpro-block-song {
 	.chordpro-transpose-controls {
 		display: flex;
-		align-items: center;
+		align-items: baseline;
 		gap: 0.5rem;
-		margin-top: 0.45rem;
+		margin-top: 0;
+		font-size: var(--wp--preset--font-size--small, 0.9rem);
+		font-family: var(--wp--preset--font-family--roboto, sans-serif);
+		font-weight: 400;
 	}
 
 	.chordpro-transpose-button,
@@ -82,20 +85,72 @@
 	}
 
 	.chordpro-meta {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.2em;
 		font-size: var(--wp--preset--font-size--small, 0.9rem);
 		font-family: var(--wp--preset--font-family--roboto, sans-serif);
-		margin: 0 0 0.1em;
+		margin: 0 1rem 0.1em 0;
+		vertical-align: top;
+	}
+
+	.chordpro-meta-bar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.25em 1rem;
+		margin: 0 0 0.35em;
+	}
+
+	.chordpro-transpose-row {
+		margin: 0 0 0.35em;
+	}
+
+	.chordpro-meta-bar .chordpro-meta,
+	.chordpro-meta-bar .chordpro-transpose-controls {
+		margin: 0;
+	}
+
+	.chordpro-meta-label {
+		display: inline-flex;
+		align-items: center;
+		white-space: nowrap;
+	}
+
+	.chordpro-meta > strong,
+	.chordpro-transpose-controls > strong,
+	.chordpro-meta-key-row > strong {
+		margin-right: 0.2em;
 	}
 
 	.chordpro-meta-key {
+		display: inline-flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.chordpro-song > .chordpro-meta-key {
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		gap: 0;
+		width: 100%;
+		gap: 0.35em;
+		margin: 0 0 0.35em;
+	}
+
+	.chordpro-song > .chordpro-meta-key > .chordpro-meta-key-row:first-child {
+		margin-right: 0;
+	}
+
+	.chordpro-song > .chordpro-meta-key > .chordpro-transpose-controls {
+		display: inline-flex;
+		margin: 0;
 	}
 
 	.chordpro-meta-key-row {
-		display: flex;
+		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
 		flex-wrap: wrap;
@@ -103,6 +158,19 @@
 
 	.chordpro-meta-value {
 		color: inherit;
+		white-space: nowrap;
+	}
+
+	.chordpro-meta-key .chordpro-meta-key-row:first-child {
+		margin-right: 0.75rem;
+	}
+
+	.chordpro-meta-key .chordpro-transpose-controls {
+		margin: 0;
+	}
+
+	.chordpro-transpose-controls .chordpro-meta-key-row {
+		align-items: baseline;
 	}
 
 	// -------------------------------------------------------------------------
@@ -214,5 +282,25 @@
 
 	.chordpro-spacer {
 		height: 0.75em;
+	}
+
+	@media (max-width: 600px) {
+		.chordpro-line-annotated {
+			padding-top: 0.65em;
+		}
+
+		.chordpro-chords {
+			height: auto;
+		}
+
+		.chordpro-chord {
+			font-size: 1em;
+		}
+
+		.chordpro-lyric-full {
+			white-space: pre-wrap;
+			overflow-wrap: anywhere;
+			line-height: 1.85;
+		}
 	}
 }
