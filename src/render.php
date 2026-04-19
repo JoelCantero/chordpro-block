@@ -84,6 +84,10 @@ $extract_schema_data = static function ( string $text ) : array {
 	foreach ( $lines as $raw_line ) {
 		$line = rtrim( $raw_line );
 
+		if ( preg_match( '/^[{\[]\s*((?:start_of_|end_of_)(?:verse|chorus|bridge|tab)|sov|eov|soc|eoc|sob|eob|sot|eot)(?:\s*:\s*[^}\]]*)?\s*[}\]]$/i', trim( $line ) ) ) {
+			continue;
+		}
+
 		   if ( preg_match( '/^\{([^}]+)\}$/', trim( $line ), $directive_match ) ) {
 			   $directive = $directive_match[1];
 			   $colon_pos = strpos( $directive, ':' );
@@ -254,6 +258,25 @@ $translate_section_label_prefix = static function ( string $value ) : string {
 	}
 
 	return $map[ $prefix ] . $suffix;
+};
+
+/**
+ * Extract structural directives written as a standalone line.
+ *
+ * Supports regular ChordPro `{...}` syntax and a bracket-only fallback
+ * like `[end_of_chorus]` so malformed imports do not render as chords.
+ *
+ * @param string $line Raw line.
+ * @return string|null
+ */
+$extract_structural_directive = static function ( string $line ) : ?string {
+	$trimmed = trim( $line );
+
+	if ( ! preg_match( '/^[{\[]\s*((?:start_of_|end_of_)(?:verse|chorus|bridge|tab)|sov|eov|soc|eoc|sob|eob|sot|eot)(?:\s*:\s*[^}\]]*)?\s*[}\]]$/i', $trimmed, $matches ) ) {
+		return null;
+	}
+
+	return trim( $matches[1] );
 };
 
 /**
@@ -461,7 +484,7 @@ $parse_chord_line = static function ( string $line ) : string {
  * @param string $text Raw ChordPro content.
  * @return string Rendered HTML.
  */
-$parse = static function ( string $text ) use ( $parse_directive, $parse_chord_line, &$open_section_count ) : string {
+$parse = static function ( string $text ) use ( $parse_directive, $parse_chord_line, $extract_structural_directive, &$open_section_count ) : string {
 	$lines  = explode( "\n", $text );
 	$html   = '';
 	$in_tab = false;
@@ -477,6 +500,21 @@ $parse = static function ( string $text ) use ( $parse_directive, $parse_chord_l
 			} else {
 				$html .= esc_html( $line ) . "\n";
 			}
+			continue;
+		}
+
+		// Structural directives accept both ChordPro braces and a bracket-only fallback.
+		$structural_directive = $extract_structural_directive( $line );
+		if ( null !== $structural_directive ) {
+			$colon = strpos( $structural_directive, ':' );
+			$key   = strtolower( trim( false !== $colon ? substr( $structural_directive, 0, $colon ) : $structural_directive ) );
+			$output = $parse_directive( $structural_directive );
+
+			if ( in_array( $key, array( 'start_of_tab', 'sot' ), true ) ) {
+				$in_tab = true;
+			}
+
+			$html .= $output;
 			continue;
 		}
 

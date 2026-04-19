@@ -40,6 +40,19 @@ function translateSectionLabelPrefix( value ) {
 	return `${ translated }${ match[ 2 ] }`;
 }
 
+function extractStructuralDirective( line ) {
+	const trimmed = line.trim();
+	const match = trimmed.match(
+		/^[{\[]\s*((?:start_of_|end_of_)(?:verse|chorus|bridge|tab)|sov|eov|soc|eoc|sob|eob|sot|eot)(?:\s*:\s*[^}\]]*)?\s*[}\]]$/i
+	);
+
+	if ( ! match ) {
+		return null;
+	}
+
+	return match[ 1 ].trim();
+}
+
 function parseDirective( raw, parserState, options ) {
 	const trimmed = raw.trim();
 	const colonPos = trimmed.indexOf( ':' );
@@ -258,6 +271,21 @@ export function parseChordPro( text, options = {} ) {
 			continue;
 		}
 
+		// Structural directives accept both ChordPro braces and a bracket-only fallback.
+		const structuralDirective = extractStructuralDirective( line );
+		if ( structuralDirective ) {
+			const output = parseDirective(
+				structuralDirective,
+				parserState,
+				parserOptions
+			);
+			if ( output.startsWith( '<pre' ) ) {
+				inTab = true;
+			}
+			html += output;
+			continue;
+		}
+
 		// Directive line.
 		const directiveMatch = line.trim().match( /^\{([^}]+)\}$/ );
 		if ( directiveMatch ) {
@@ -274,7 +302,7 @@ export function parseChordPro( text, options = {} ) {
 		}
 
 		// Extra guard: if the line is only a directive (e.g. {eoc}) but not matched above, skip it.
-		if ( /^\{[a-z_]+\}$/i.test( line.trim() ) ) {
+		if ( /^[{\[]\s*[a-z_]+\s*[}\]]$/i.test( line.trim() ) ) {
 			continue;
 		}
 
