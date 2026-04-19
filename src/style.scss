@@ -6,7 +6,7 @@
  * colour / spacing / typography supports applied by WordPress.
  */
 
-@import './fonts.scss';
+@use './fonts';
 
 .wp-block-chordpro-block-song {
 	.chordpro-transpose-controls {
