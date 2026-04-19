@@ -1,5 +1,5 @@
 import { __ } from '@wordpress/i18n';
-import { useState } from '@wordpress/element';
+import { useEffect, useRef, useState } from '@wordpress/element';
 import {
 	useBlockProps,
 	InspectorControls,
@@ -17,6 +17,7 @@ import {
 	SelectControl,
 } from '@wordpress/components';
 import { parseChordPro } from './chordpro-parser';
+import { formatOffset, updateBlock } from './transpose';
 
 /**
  * Editor component for the ChordPro block.
@@ -28,6 +29,16 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 	const blockProps = useBlockProps();
 	const colorGradientSettings = useMultipleOriginColorsAndGradients();
 	const [ isPreviewMode, setIsPreviewMode ] = useState( false );
+	const [ transposeOffset, setTransposeOffset ] = useState( 0 );
+	const previewRef = useRef();
+
+	useEffect( () => {
+		if ( ! isPreviewMode || ! previewRef.current ) {
+			return;
+		}
+
+		updateBlock( previewRef.current, transposeOffset );
+	}, [ content, isPreviewMode, showTitle, showArtist, transposeOffset ] );
 
 	return (
 		<div { ...blockProps }>
@@ -139,7 +150,57 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 					__nextHasNoMarginBottom={ true }
 				/>
 			) : content ? (
-				<div className="chordpro-editor__preview">
+				<div className="chordpro-editor__preview" ref={ previewRef }>
+					<div
+						className="chordpro-transpose-controls"
+						role="group"
+						aria-label={ __( 'Transpose chords', 'chordpro-block' ) }
+					>
+						<div className="chordpro-meta-key-row">
+							<strong>{ __( 'Transpose', 'chordpro-block' ) }:</strong>
+							<button
+								type="button"
+								className="chordpro-transpose-button"
+								onClick={ () =>
+									setTransposeOffset( ( value ) => value - 1 )
+								}
+								aria-label={ __(
+									'Lower one semitone',
+									'chordpro-block'
+								) }
+							>
+								-
+							</button>
+							<button
+								type="button"
+								className="chordpro-transpose-button"
+								onClick={ () =>
+									setTransposeOffset( ( value ) => value + 1 )
+								}
+								aria-label={ __(
+									'Raise one semitone',
+									'chordpro-block'
+								) }
+							>
+								+
+							</button>
+							<button
+								type="button"
+								className="chordpro-transpose-reset"
+								onClick={ () => setTransposeOffset( 0 ) }
+								data-transpose-reset
+								disabled={ transposeOffset === 0 }
+							>
+								{ __( 'Reset', 'chordpro-block' ) }
+							</button>
+							<span
+								className="chordpro-editor__transpose-value"
+								data-transpose-display
+							>
+								{ formatOffset( transposeOffset ) }
+							</span>
+						</div>
+					</div>
 					<div
 						className={ [
 							'chordpro-song',

@@ -73,7 +73,7 @@ function parseDirective( raw, parserState, options ) {
 		case 'lyricist':
 			return `<div class="chordpro-lyricist">${ escapeHtml( value ) }</div>`;
 		case 'key':
-			return `<div class="chordpro-meta"><strong>${ escapeHtml( _x( 'Key', 'musical key label', 'chordpro-block' ) ) }:</strong> ${ escapeHtml( value ) }</div>`;
+			return `<div class="chordpro-meta chordpro-meta-key"><div class="chordpro-meta-key-row"><strong>${ escapeHtml( _x( 'Key', 'musical key label', 'chordpro-block' ) ) }:</strong> <span class="chordpro-meta-value" data-original-key="${ escapeHtml( value ) }">${ escapeHtml( value ) }</span></div></div>`;
 		case 'capo':
 			return `<div class="chordpro-meta"><strong>${ escapeHtml( _x( 'Capo', 'guitar capo position', 'chordpro-block' ) ) }:</strong> ${ escapeHtml( value ) }</div>`;
 		case 'tempo':
