@@ -1,5 +1,31 @@
-const NOTES_SHARP = [ 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B' ];
-const NOTES_FLAT = [ 'C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B' ];
+const NOTES_SHARP = [
+	'C',
+	'C#',
+	'D',
+	'D#',
+	'E',
+	'F',
+	'F#',
+	'G',
+	'G#',
+	'A',
+	'A#',
+	'B',
+];
+const NOTES_FLAT = [
+	'C',
+	'Db',
+	'D',
+	'Eb',
+	'E',
+	'F',
+	'Gb',
+	'G',
+	'Ab',
+	'A',
+	'Bb',
+	'B',
+];
 const NOTE_INDEX = {
 	C: 0,
 	'B#': 0,
@@ -42,9 +68,8 @@ export function transposeChord( chord, steps ) {
 		return chord;
 	}
 
-	let transposed = chord.replace(
-		/^([A-G](?:b|#)?)/,
-		( match ) => transposeNote( match, steps )
+	let transposed = chord.replace( /^([A-G](?:b|#)?)/, ( match ) =>
+		transposeNote( match, steps )
 	);
 
 	transposed = transposed.replace(
@@ -223,7 +248,10 @@ export function updateBlock( block, offset ) {
 	recalculateBlockPositions( block );
 
 	if ( keyNode ) {
-		keyNode.textContent = transposeChord( keyNode.dataset.originalKey, offset );
+		keyNode.textContent = transposeChord(
+			keyNode.dataset.originalKey,
+			offset
+		);
 	}
 
 	if ( display ) {
