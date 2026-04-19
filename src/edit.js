@@ -58,7 +58,7 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 							colorValue: chordColor,
 							onColorChange: ( value ) =>
 								setAttributes( {
-									chordColor: value || '#c0392b',
+											   chordColor: value || '',
 								} ),
 						},
 					] }
@@ -66,62 +66,64 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 				/>
 			</InspectorControls>
 
-			<InspectorControls>
-				<PanelBody
-					title={ __( 'Display', 'chordpro-block' ) }
-					initialOpen={ true }
-				>
-					<ToggleControl
-						label={ __( 'Show song title', 'chordpro-block' ) }
-						help={ __(
-							'Display the title extracted from {title: ...} or {t: ...}.',
-							'chordpro-block'
-						) }
-						checked={ !! showTitle }
-						onChange={ ( value ) =>
-							setAttributes( { showTitle: value } )
-						}
-					/>
-					<ToggleControl
-						label={ __( 'Show song artist', 'chordpro-block' ) }
-						help={ __(
-							'Display the artist extracted from {artist: ...}.',
-							'chordpro-block'
-						) }
-						checked={ !! showArtist }
-						onChange={ ( value ) =>
-							setAttributes( { showArtist: value } )
-						}
-					/>
-				</PanelBody>
+			   <InspectorControls>
+				   <PanelBody
+					   title={ __( 'Display', 'chordpro-block' ) }
+					   initialOpen={ true }
+				   >
+					   <ToggleControl
+						   label={ __( 'Show song title', 'chordpro-block' ) }
+						   help={ __(
+							   'Display the title extracted from {title: ...} or {t: ...}.',
+							   'chordpro-block'
+						   ) }
+						   checked={ !! showTitle }
+						   onChange={ ( value ) =>
+							   setAttributes( { showTitle: value } )
+						   }
+					   />
+					   <ToggleControl
+						   label={ __( 'Show song artist', 'chordpro-block' ) }
+						   help={ __(
+							   'Display the artist extracted from {artist: ...}.',
+							   'chordpro-block'
+						   ) }
+						   checked={ !! showArtist }
+						   onChange={ ( value ) =>
+							   setAttributes( { showArtist: value } )
+						   }
+					   />
+				   </PanelBody>
+			   </InspectorControls>
 
-				<PanelBody
-					title={ __( 'Styles', 'chordpro-block' ) }
-					initialOpen={ false }
-				>
-					<SelectControl
-						label={ __( 'Font family', 'chordpro-block' ) }
-						value={ fontFamily || 'default' }
-						options={ [
-							{
-								label: __( 'Default (Courier New)', 'chordpro-block' ),
-								value: 'default',
-							},
-							{
-								label: __( 'Roboto Mono', 'chordpro-block' ),
-								value: 'roboto',
-							},
-							{
-								label: __( 'Martian Mono', 'chordpro-block' ),
-								value: 'martian',
-							},
-						] }
-						onChange={ ( value ) =>
-							setAttributes( { fontFamily: value } )
-						}
-					/>
-				</PanelBody>
-			</InspectorControls>
+			   <InspectorControls group="styles">
+				   <PanelBody
+					   title={ __( 'Styles', 'chordpro-block' ) }
+					   initialOpen={ false }
+				   >
+					   <SelectControl
+						   label={ __( 'Font family', 'chordpro-block' ) }
+						   value={ fontFamily || 'default' }
+						   options={ [
+							   {
+								   label: __( 'Default (Courier New)', 'chordpro-block' ),
+								   value: 'default',
+							   },
+							   {
+								   label: __( 'Roboto Mono', 'chordpro-block' ),
+								   value: 'roboto',
+							   },
+							   {
+								   label: __( 'Martian Mono', 'chordpro-block' ),
+								   value: 'martian',
+							   },
+						   ] }
+						   onChange={ ( value ) =>
+							   setAttributes( { fontFamily: value } )
+						   }
+					   />
+				   </PanelBody>
+			   </InspectorControls>
 
 			{ ! isPreviewMode ? (
 				<TextareaControl

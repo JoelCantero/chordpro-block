@@ -19,7 +19,37 @@ if ( empty( $attributes['content'] ) ) {
 
 $raw_content = $attributes['content'];
 $storage_key = 'chordpro-block:' . md5( $raw_content );
-$chord_color = ! empty( $attributes['chordColor'] ) ? sanitize_hex_color( $attributes['chordColor'] ) : '';
+$chord_color = '';
+if ( ! empty( $attributes['chordColor'] ) ) {
+	$chord_color = sanitize_hex_color( $attributes['chordColor'] );
+} else {
+	// Intentar obtener el color primario del tema (WordPress 5.9+ con theme.json o paleta de colores clásica)
+	$primary = '';
+	if ( function_exists( 'wp_get_global_settings' ) ) {
+		$theme_json = wp_get_global_settings( array( 'color', 'palette' ) );
+		if ( ! empty( $theme_json ) && is_array( $theme_json ) ) {
+			foreach ( $theme_json as $color ) {
+				if ( isset( $color['slug'] ) && $color['slug'] === 'primary' && ! empty( $color['color'] ) ) {
+					$primary = $color['color'];
+					break;
+				}
+			}
+		}
+	}
+	// Fallback: paleta clásica
+	if ( empty( $primary ) && function_exists( 'get_theme_support' ) ) {
+		$palette = get_theme_support( 'editor-color-palette' );
+		if ( ! empty( $palette[0] ) && is_array( $palette[0] ) ) {
+			foreach ( $palette[0] as $color ) {
+				if ( isset( $color['slug'] ) && $color['slug'] === 'primary' && ! empty( $color['color'] ) ) {
+					$primary = $color['color'];
+					break;
+				}
+			}
+		}
+	}
+	$chord_color = $primary;
+}
 $show_title  = ! empty( $attributes['showTitle'] );
 $show_artist = ! empty( $attributes['showArtist'] );
 $font_family = ! empty( $attributes['fontFamily'] ) ? sanitize_text_field( $attributes['fontFamily'] ) : 'default';
@@ -54,32 +84,42 @@ $extract_schema_data = static function ( string $text ) : array {
 	foreach ( $lines as $raw_line ) {
 		$line = rtrim( $raw_line );
 
-		if ( preg_match( '/^\{([^}]+)\}$/', trim( $line ), $directive_match ) ) {
-			$directive = $directive_match[1];
-			$colon_pos = strpos( $directive, ':' );
+		   if ( preg_match( '/^\{([^}]+)\}$/', trim( $line ), $directive_match ) ) {
+			   $directive = $directive_match[1];
+			   $colon_pos = strpos( $directive, ':' );
 
-			if ( false !== $colon_pos ) {
-				$key   = strtolower( trim( substr( $directive, 0, $colon_pos ) ) );
-				$value = trim( substr( $directive, $colon_pos + 1 ) );
-			} else {
-				$key   = strtolower( trim( $directive ) );
-				$value = '';
-			}
+			   if ( false !== $colon_pos ) {
+				   $key   = strtolower( trim( substr( $directive, 0, $colon_pos ) ) );
+				   $value = trim( substr( $directive, $colon_pos + 1 ) );
+			   } else {
+				   $key   = strtolower( trim( $directive ) );
+				   $value = '';
+			   }
 
-			switch ( $key ) {
-				case 'title':
-				case 't':
-					if ( '' === $data['name'] ) {
-						$data['name'] = $value;
-					}
-					break;
+			   // Ignorar directivas de sección para que no pasen como texto.
+			   if ( in_array( $key, [
+				   'start_of_verse', 'end_of_verse', 'sov', 'eov',
+				   'start_of_chorus', 'end_of_chorus', 'soc', 'eoc',
+				   'start_of_bridge', 'end_of_bridge', 'sob', 'eob',
+				   'start_of_tab', 'end_of_tab', 'sot', 'eot',
+			   ], true ) ) {
+				   continue;
+			   }
 
-				case 'subtitle':
-				case 'st':
-					if ( '' === $data['subtitle'] ) {
-						$data['subtitle'] = $value;
-					}
-					break;
+			   switch ( $key ) {
+				   case 'title':
+				   case 't':
+					   if ( '' === $data['name'] ) {
+						   $data['name'] = $value;
+					   }
+					   break;
+
+				   case 'subtitle':
+				   case 'st':
+					   if ( '' === $data['subtitle'] ) {
+						   $data['subtitle'] = $value;
+					   }
+					   break;
 
 				case 'artist':
 					if ( '' === $data['artist'] ) {
@@ -380,6 +420,7 @@ $parse_chord_line = static function ( string $line ) : string {
 	$chord_markers   = '';
 	$first_bracket   = mb_strpos( $line, '[' );
 	$lyric_position  = 0;
+	$chord_offset    = 0;
 
 	// Any text before the first chord marker is plain lyric text.
 	if ( false !== $first_bracket && $first_bracket > 0 ) {
@@ -395,17 +436,19 @@ $parse_chord_line = static function ( string $line ) : string {
 		$original_chord = $match[1];
 		$lyric_segment  = $match[2];
 		$segment_length = mb_strlen( $lyric_segment );
+		$chord_length   = mb_strlen( $original_chord );
+		$base_lyric_position = $lyric_position;
+		$chord_position = $lyric_position + $chord_offset;
 
-		$chord_markers .= '<p class="chordpro-chord" data-original-chord="' . esc_attr( $original_chord ) . '" data-lyric-segment-length="' . esc_attr( (string) $segment_length ) . '" style="left:' . esc_attr( (string) $lyric_position ) . 'ch">' . esc_html( $original_chord ) . '</p>';
+		$chord_markers .= '<p class="chordpro-chord" data-original-chord="' . esc_attr( $original_chord ) . '" data-lyric-position="' . esc_attr( (string) $base_lyric_position ) . '" data-lyric-segment-length="' . esc_attr( (string) $segment_length ) . '" style="left:' . esc_attr( (string) $chord_position ) . 'ch">' . esc_html( $original_chord ) . '</p>';
 		$lyric_text    .= $lyric_segment;
 
 		if ( $segment_length > 0 ) {
 			$lyric_position += $segment_length;
+			$chord_offset   = 0;
 		} else {
-			// Reserve room for back-to-back chords — add spaces to make room visible.
-			$reserved = mb_strlen( $original_chord ) + 1;
-			$lyric_position += $reserved;
-			$lyric_text    .= str_repeat( ' ', $reserved );
+			// Keep back-to-back chords grouped above the same lyric anchor.
+			$chord_offset += $chord_length + 1;
 		}
 	}
 

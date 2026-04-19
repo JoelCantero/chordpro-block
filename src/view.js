@@ -55,31 +55,85 @@ function transposeChord( chord, steps ) {
 	return transposed;
 }
 
+let measureCanvas;
+
+function getMeasureContext() {
+	if ( ! measureCanvas ) {
+		measureCanvas = document.createElement( 'canvas' );
+	}
+
+	return measureCanvas.getContext( '2d' );
+}
+
+function getNodeFont( node ) {
+	const style = window.getComputedStyle( node );
+
+	return (
+		style.font ||
+		`${ style.fontStyle } ${ style.fontVariant } ${ style.fontWeight } ${ style.fontSize } / ${ style.lineHeight } ${ style.fontFamily }`
+	);
+}
+
+function measureTextWidth( text, font ) {
+	const context = getMeasureContext();
+
+	if ( ! context ) {
+		return 0;
+	}
+
+	context.font = font;
+
+	return context.measureText( text ).width;
+}
+
 function recalculateLinePositions( line, offset ) {
 	const chords = Array.from( line.querySelectorAll( '.chordpro-chord[data-original-chord]' ) );
+	const lyricNode = line.querySelector( '.chordpro-lyric' );
 
-	if ( chords.length === 0 ) {
+	if ( chords.length === 0 || ! lyricNode ) {
 		return;
 	}
 
-	let position = 0;
+	const lyricText = lyricNode.textContent || '';
+	const lyricChars = Array.from( lyricText );
+	const lyricFont = getNodeFont( lyricNode );
+	const chordFont = getNodeFont( chords[ 0 ] );
+	const chordGap = measureTextWidth( ' ', chordFont );
+	let previousBaseLyricPosition = null;
+	let chordOffset = 0;
 
 	chords.forEach( ( chord ) => {
 		const originalChord = chord.dataset.originalChord;
+		const baseLyricPosition = parseInt( chord.dataset.lyricPosition || '0' );
 		const segmentLength = parseInt( chord.dataset.lyricSegmentLength || '0' );
 		const transposed = transposeChord( originalChord, offset );
 
-		// Position this chord at the current position.
-		chord.style.left = `${ position }ch`;
-
-		// Advance by lyric segment length if present, otherwise reserve space for chord.
-		if ( segmentLength > 0 ) {
-			// Text follows the chord — advance by text length only.
-			position += segmentLength;
-		} else {
-			// No text after chord — reserve space: chord length + 1 minimum spacing.
-			position += Array.from( transposed ).length + 1;
+		if ( previousBaseLyricPosition !== baseLyricPosition ) {
+			chordOffset = 0;
 		}
+
+		const lyricPrefix = lyricChars.slice( 0, baseLyricPosition ).join( '' );
+		const anchorLeft = measureTextWidth( lyricPrefix, lyricFont );
+
+		chord.style.left = `${ anchorLeft + chordOffset }px`;
+
+		if ( segmentLength > 0 ) {
+			chordOffset = 0;
+		} else {
+			chordOffset += measureTextWidth( transposed, chordFont ) + chordGap;
+		}
+
+		previousBaseLyricPosition = baseLyricPosition + segmentLength;
+		if ( segmentLength === 0 ) {
+			previousBaseLyricPosition = baseLyricPosition;
+		}
+	} );
+}
+
+function recalculateBlockPositions( block ) {
+	block.querySelectorAll( '.chordpro-line-annotated' ).forEach( ( line ) => {
+		const offset = Number( block.dataset.transposeOffset || '0' );
+		recalculateLinePositions( line, offset );
 	} );
 }
 
@@ -147,22 +201,12 @@ function updateBlock( block, offset ) {
 	const chordNodes = block.querySelectorAll( '.chordpro-chord[data-original-chord]' );
 	const keyNode = block.querySelector( '[data-original-key]' );
 
-	// Update chords and recalculate positions per line to handle variable chord lengths.
-	const processedLines = new Set();
 	chordNodes.forEach( ( node ) => {
 		const transposed = transposeChord( node.dataset.originalChord, offset );
 		node.textContent = transposed;
-
-		// Only recalculate positions when there's actual transposition (offset !== 0).
-		if ( offset !== 0 ) {
-			// Mark this chord's line for position recalculation.
-			const line = node.closest( '.chordpro-line-annotated' );
-			if ( line && ! processedLines.has( line ) ) {
-				processedLines.add( line );
-				recalculateLinePositions( line, offset );
-			}
-		}
 	} );
+
+	recalculateBlockPositions( block );
 
 	if ( keyNode ) {
 		keyNode.textContent = transposeChord( keyNode.dataset.originalKey, offset );
@@ -222,8 +266,20 @@ function initTransposeControls() {
 		.forEach( bindBlock );
 }
 
+function refreshAllBlocks() {
+	document
+		.querySelectorAll( '.wp-block-chordpro-block-song[data-transpose-bound="true"]' )
+		.forEach( recalculateBlockPositions );
+}
+
 if ( document.readyState === 'loading' ) {
 	document.addEventListener( 'DOMContentLoaded', initTransposeControls );
 } else {
 	initTransposeControls();
+}
+
+window.addEventListener( 'resize', refreshAllBlocks );
+
+if ( document.fonts?.ready ) {
+	document.fonts.ready.then( refreshAllBlocks ).catch( () => {} );
 }

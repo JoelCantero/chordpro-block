@@ -152,6 +152,7 @@ function parseChordLine( line ) {
 	let chordMarkers = '';
 	const firstBracket = line.indexOf( '[' );
 	let lyricPosition = 0;
+	let chordOffset = 0;
 
 	// Text before the first chord marker stays as plain lyric text.
 	if ( firstBracket > 0 ) {
@@ -165,16 +166,18 @@ function parseChordLine( line ) {
 	let match;
 	while ( ( match = pattern.exec( line ) ) !== null ) {
 		const segmentLength = Array.from( match[ 2 ] ).length;
-		chordMarkers += `<p class="chordpro-chord" data-original-chord="${ escapeHtml( match[ 1 ] ) }" data-lyric-segment-length="${ segmentLength }" style="left:${ lyricPosition }ch">${ escapeHtml( match[ 1 ] ) }</p>`;
+		const chordLength = Array.from( match[ 1 ] ).length;
+		const baseLyricPosition = lyricPosition;
+		const chordPosition = lyricPosition + chordOffset;
+		chordMarkers += `<p class="chordpro-chord" data-original-chord="${ escapeHtml( match[ 1 ] ) }" data-lyric-position="${ baseLyricPosition }" data-lyric-segment-length="${ segmentLength }" style="left:${ chordPosition }ch">${ escapeHtml( match[ 1 ] ) }</p>`;
 		lyricText += match[ 2 ];
 
 		if ( segmentLength > 0 ) {
 			lyricPosition += segmentLength;
+			chordOffset = 0;
 		} else {
-			// Reserve room for consecutive chords without lyric text — add spaces to make room visible.
-			const reserved = Array.from( match[ 1 ] ).length + 1;
-			lyricPosition += reserved;
-			lyricText += ' '.repeat( reserved );
+			// Keep consecutive chords grouped above the same lyric anchor without changing lyric spacing.
+			chordOffset += chordLength + 1;
 		}
 	}
 
@@ -199,50 +202,56 @@ export function parseChordPro( text, options = {} ) {
 		openSectionCount: 0,
 	};
 
-	for ( const rawLine of lines ) {
-		const line = rawLine.replace( /\s+$/, '' ); // rtrim
+	       for ( const rawLine of lines ) {
+		       const line = rawLine.replace( /\s+$/, '' ); // rtrim
 
-		// Inside a tab section: accumulate verbatim until end_of_tab.
-		if ( inTab ) {
-			if ( /^\{(end_of_tab|eot)\}$/i.test( line.trim() ) ) {
-				inTab = false;
-				html += '</pre>';
-			} else {
-				html += escapeHtml( line ) + '\n';
-			}
-			continue;
-		}
+		       // Inside a tab section: accumulate verbatim until end_of_tab.
+		       if ( inTab ) {
+			       if ( /^\{(end_of_tab|eot)\}$/i.test( line.trim() ) ) {
+				       inTab = false;
+				       html += '</pre>';
+			       } else {
+				       html += escapeHtml( line ) + '\n';
+			       }
+			       continue;
+		       }
 
-		// Directive line.
-		const directiveMatch = line.trim().match( /^\{([^}]+)\}$/ );
-		if ( directiveMatch ) {
-			const output = parseDirective(
-				directiveMatch[ 1 ],
-				parserState,
-				parserOptions
-			);
-			if ( output.startsWith( '<pre' ) ) {
-				inTab = true;
-			}
-			html += output;
-			continue;
-		}
+		       // Directive line.
+		       const directiveMatch = line.trim().match( /^\{([^}]+)\}$/ );
+		       if ( directiveMatch ) {
+			       const output = parseDirective(
+				       directiveMatch[ 1 ],
+				       parserState,
+				       parserOptions
+			       );
+			       if ( output.startsWith( '<pre' ) ) {
+				       inTab = true;
+			       }
+			       html += output;
+			       continue;
+		       }
 
-		// Empty line → visual spacer.
-		if ( line.trim() === '' ) {
-			html += '<div class="chordpro-spacer"></div>';
-			continue;
-		}
+		       // Extra guard: if the line is only a directive (e.g. {eoc}) but not matched above, skip it.
+		       if (/^\{[a-z_]+\}$/i.test(line.trim())) {
+			       // Silently skip unknown/unsupported directives.
+			       continue;
+		       }
 
-		// Chord line (contains at least one [...]).
-		if ( line.includes( '[' ) ) {
-			html += parseChordLine( line );
-			continue;
-		}
+		       // Empty line → visual spacer.
+		       if ( line.trim() === '' ) {
+			       html += '<div class="chordpro-spacer"></div>';
+			       continue;
+		       }
 
-		// Plain lyric line.
-		html += `<div class="chordpro-line"><p class="chordpro-lyric chordpro-lyric-plain">${ escapeHtml( line ) }</p></div>`;
-	}
+		       // Chord line (contains at least one [...] ).
+		       if ( line.includes( '[' ) ) {
+			       html += parseChordLine( line );
+			       continue;
+		       }
+
+		       // Plain lyric line.
+		       html += `<div class="chordpro-line"><p class="chordpro-lyric chordpro-lyric-plain">${ escapeHtml( line ) }</p></div>`;
+	       }
 
 	while ( parserState.openSectionCount > 0 ) {
 		html += '</div>';

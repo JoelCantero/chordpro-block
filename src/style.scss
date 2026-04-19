@@ -19,21 +19,22 @@
 	.chordpro-transpose-button,
 	.chordpro-transpose-reset {
 		appearance: none;
-		border: 1px solid #c9ced6;
+		border: 1px solid var(--wp--preset--color--primary, #c9ced6);
 		background: #fff;
-		color: #1d2327;
+		color: var(--wp--preset--color--primary, #1d2327);
 		border-radius: 999px;
 		padding: 0.35rem 0.8rem;
-		font: inherit;
-		font-size: 0.9rem;
+		font-family: var(--wp--preset--font-family--roboto, inherit);
+		font-size: var(--wp--preset--font-size--small, 0.9rem);
 		line-height: 1.2;
 		cursor: pointer;
 		transition: background-color 120ms ease, border-color 120ms ease,
 			color 120ms ease;
 
 		&:hover {
-			background: #f6f7f7;
-			border-color: #8c8f94;
+			background: var(--wp--preset--color--primary, #1d2327);
+			border-color: var(--wp--preset--color--primary, #1d2327);
+			color: #fff;
 		}
 
 		&:disabled {
@@ -81,8 +82,8 @@
 	}
 
 	.chordpro-meta {
-		font-size: 0.9em;
-		color: #777;
+		font-size: var(--wp--preset--font-size--small, 0.9rem);
+		font-family: var(--wp--preset--font-family--roboto, sans-serif);
 		margin: 0 0 0.1em;
 	}
 
@@ -109,9 +110,8 @@
 	// -------------------------------------------------------------------------
 
 	.chordpro-comment {
-		font-style: italic;
-		font-weight: 700;
-		color: #444;
+		font-size: var(--wp--preset--font-size--small, 0.9rem);
+		font-family: var(--wp--preset--font-family--roboto, sans-serif);
 		margin: 1em 0 0.3em;
 	}
 
@@ -169,7 +169,7 @@
 
 	.chordpro-chord {
 		position: absolute;
-		color: var(--chordpro-chord-color, #c0392b);
+		color: var(--chordpro-chord-color, var(--wp--preset--color--primary, #c0392b));
 		font-weight: 700;
 		font-size: 1em;
 		white-space: pre;
