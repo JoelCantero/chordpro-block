@@ -1,86 +1,12 @@
-const NOTES_SHARP = [
-	'C',
-	'C#',
-	'D',
-	'D#',
-	'E',
-	'F',
-	'F#',
-	'G',
-	'G#',
-	'A',
-	'A#',
-	'B',
-];
-const NOTES_FLAT = [
-	'C',
-	'Db',
-	'D',
-	'Eb',
-	'E',
-	'F',
-	'Gb',
-	'G',
-	'Ab',
-	'A',
-	'Bb',
-	'B',
-];
-const NOTE_INDEX = {
-	C: 0,
-	'B#': 0,
-	Db: 1,
-	'C#': 1,
-	D: 2,
-	Eb: 3,
-	'D#': 3,
-	E: 4,
-	Fb: 4,
-	F: 5,
-	'E#': 5,
-	Gb: 6,
-	'F#': 6,
-	G: 7,
-	Ab: 8,
-	'G#': 8,
-	A: 9,
-	Bb: 10,
-	'A#': 10,
-	B: 11,
-	Cb: 11,
-};
-
-function transposeNote( note, steps ) {
-	const index = NOTE_INDEX[ note ];
-
-	if ( typeof index !== 'number' ) {
-		return note;
-	}
-
-	const nextIndex = ( index + steps + 120 ) % 12;
-	const scale = note.includes( 'b' ) ? NOTES_FLAT : NOTES_SHARP;
-
-	return scale[ nextIndex ];
-}
-
-export function transposeChord( chord, steps ) {
-	if ( ! steps || /^(?:N\.?C\.?)$/i.test( chord.trim() ) ) {
-		return chord;
-	}
-
-	let transposed = chord.replace( /^([A-G](?:b|#)?)/, ( match ) =>
-		transposeNote( match, steps )
-	);
-
-	transposed = transposed.replace(
-		/\/([A-G](?:b|#)?)/,
-		( _match, bassNote ) => `/${ transposeNote( bassNote, steps ) }`
-	);
-
-	return transposed;
-}
+import { __, sprintf } from '@wordpress/i18n';
+import { getTransposeContext, transposeChord } from './chordpro-transpose';
 
 let measureCanvas;
+let refreshFrame = null;
+const queuedBlocks = new Set();
+const measurementCache = new Map();
+const anchorMetricsCache = new WeakMap();
+const blockObservers = new WeakMap();
 
 function getMeasureContext() {
 	if ( ! measureCanvas ) {
@@ -99,6 +25,10 @@ function getNodeFont( node ) {
 	);
 }
 
+function getMeasurementCacheKey( text, font ) {
+	return `${ font }::${ text }`;
+}
+
 function measureTextWidth( text, font ) {
 	const context = getMeasureContext();
 
@@ -106,9 +36,19 @@ function measureTextWidth( text, font ) {
 		return 0;
 	}
 
+	const cacheKey = getMeasurementCacheKey( text, font );
+
+	if ( measurementCache.has( cacheKey ) ) {
+		return measurementCache.get( cacheKey );
+	}
+
 	context.font = font;
 
-	return context.measureText( text ).width;
+	const width = context.measureText( text ).width;
+
+	measurementCache.set( cacheKey, width );
+
+	return width;
 }
 
 function getCodeUnitOffsets( text ) {
@@ -123,7 +63,37 @@ function getCodeUnitOffsets( text ) {
 	return offsets;
 }
 
-function getAnchorMetrics( lyricNode, lyricChars, codeUnitOffsets, position ) {
+function getAnchorCacheEntry( lyricNode, signature ) {
+	const currentCache = anchorMetricsCache.get( lyricNode );
+
+	if ( currentCache?.signature === signature ) {
+		return currentCache.positions;
+	}
+
+	const positions = new Map();
+
+	anchorMetricsCache.set( lyricNode, {
+		signature,
+		positions,
+	} );
+
+	return positions;
+}
+
+function getAnchorMetrics(
+	lyricNode,
+	lyricChars,
+	codeUnitOffsets,
+	position,
+	signature
+) {
+	const safePosition = Math.max( 0, Math.min( position, lyricChars.length ) );
+	const positions = getAnchorCacheEntry( lyricNode, signature );
+
+	if ( positions.has( safePosition ) ) {
+		return positions.get( safePosition );
+	}
+
 	const textNode = lyricNode.firstChild;
 
 	if ( ! textNode || textNode.nodeType !== 3 ) {
@@ -131,12 +101,19 @@ function getAnchorMetrics( lyricNode, lyricChars, codeUnitOffsets, position ) {
 	}
 
 	if ( lyricChars.length === 0 ) {
-		return { left: 0, top: 0 };
+		const emptyMetrics = {
+			left: 0,
+			top: 0,
+		};
+
+		positions.set( safePosition, emptyMetrics );
+
+		return emptyMetrics;
 	}
 
-	const safePosition = Math.max( 0, Math.min( position, lyricChars.length ) );
 	const lyricRect = lyricNode.getBoundingClientRect();
 	const range = document.createRange();
+	let metrics = null;
 
 	range.setStart( textNode, codeUnitOffsets[ safePosition ] );
 	range.collapse( true );
@@ -146,13 +123,13 @@ function getAnchorMetrics( lyricNode, lyricChars, codeUnitOffsets, position ) {
 	);
 
 	if ( caretRect ) {
-		return {
+		metrics = {
 			left: caretRect.left - lyricRect.left,
 			top: caretRect.top - lyricRect.top,
 		};
 	}
 
-	if ( safePosition < lyricChars.length ) {
+	if ( ! metrics && safePosition < lyricChars.length ) {
 		range.setStart( textNode, codeUnitOffsets[ safePosition ] );
 		range.setEnd( textNode, codeUnitOffsets[ safePosition + 1 ] );
 
@@ -161,14 +138,14 @@ function getAnchorMetrics( lyricNode, lyricChars, codeUnitOffsets, position ) {
 		);
 
 		if ( rect ) {
-			return {
+			metrics = {
 				left: rect.left - lyricRect.left,
 				top: rect.top - lyricRect.top,
 			};
 		}
 	}
 
-	if ( safePosition > 0 ) {
+	if ( ! metrics && safePosition > 0 ) {
 		range.setStart( textNode, codeUnitOffsets[ safePosition - 1 ] );
 		range.setEnd( textNode, codeUnitOffsets[ safePosition ] );
 
@@ -178,17 +155,42 @@ function getAnchorMetrics( lyricNode, lyricChars, codeUnitOffsets, position ) {
 		const rect = rects[ rects.length - 1 ];
 
 		if ( rect ) {
-			return {
+			metrics = {
 				left: rect.right - lyricRect.left,
 				top: rect.top - lyricRect.top,
 			};
 		}
 	}
 
-	return null;
+	if ( metrics ) {
+		positions.set( safePosition, metrics );
+	}
+
+	return metrics;
 }
 
-function recalculateLinePositions( line, offset ) {
+function getBlockTransposeSettings( block, offset ) {
+	const keyNode = block.querySelector( '[data-original-key]' );
+
+	if ( ! keyNode ) {
+		return {
+			displayKey: null,
+			preferFlats: null,
+		};
+	}
+
+	const keyContext = getTransposeContext(
+		keyNode.dataset.originalKey,
+		offset
+	);
+
+	return {
+		displayKey: keyContext?.displayKey ?? keyNode.dataset.originalKey,
+		preferFlats: keyContext?.preferFlats ?? null,
+	};
+}
+
+function recalculateLinePositions( line, offset, transposeSettings ) {
 	const chords = Array.from(
 		line.querySelectorAll( '.chordpro-chord[data-original-chord]' )
 	);
@@ -215,6 +217,13 @@ function recalculateLinePositions( line, offset ) {
 		Number.isFinite( lyricLineHeight ) &&
 		lyricHeight > lyricLineHeight * 1.5;
 	const positionedChords = [];
+	const anchorSignature = [
+		lyricText,
+		lyricNode.clientWidth,
+		lyricFont,
+		lyricLineHeight,
+		mobileLayout ? 'mobile' : 'desktop',
+	].join( '|' );
 	let previousBaseLyricPosition = null;
 	let chordOffset = 0;
 
@@ -228,7 +237,9 @@ function recalculateLinePositions( line, offset ) {
 			chord.dataset.lyricSegmentLength || '0',
 			10
 		);
-		const transposed = transposeChord( originalChord, offset );
+		const transposed = transposeChord( originalChord, offset, {
+			preferFlats: transposeSettings.preferFlats,
+		} );
 
 		if ( previousBaseLyricPosition !== baseLyricPosition ) {
 			chordOffset = 0;
@@ -238,7 +249,8 @@ function recalculateLinePositions( line, offset ) {
 			lyricNode,
 			lyricChars,
 			codeUnitOffsets,
-			baseLyricPosition
+			baseLyricPosition,
+			anchorSignature
 		);
 		const lyricPrefix = lyricChars.slice( 0, baseLyricPosition ).join( '' );
 		const fallbackLeft = measureTextWidth( lyricPrefix, lyricFont );
@@ -275,6 +287,7 @@ function recalculateLinePositions( line, offset ) {
 		}
 
 		previousBaseLyricPosition = baseLyricPosition + segmentLength;
+
 		if ( segmentLength === 0 ) {
 			previousBaseLyricPosition = baseLyricPosition;
 		}
@@ -300,6 +313,7 @@ function recalculateLinePositions( line, offset ) {
 		}
 
 		const resolvedRect = chord.getBoundingClientRect();
+
 		previousRightByRow.set(
 			rowKey,
 			resolvedRect.right - containerRect.left
@@ -307,35 +321,28 @@ function recalculateLinePositions( line, offset ) {
 	} );
 }
 
-function recalculateBlockPositions( block ) {
+function recalculateBlockPositions(
+	block,
+	offset = Number( block.dataset.transposeOffset || '0' ),
+	transposeSettings = getBlockTransposeSettings( block, offset )
+) {
 	block.querySelectorAll( '.chordpro-line-annotated' ).forEach( ( line ) => {
-		const offset = Number( block.dataset.transposeOffset || '0' );
-		recalculateLinePositions( line, offset );
+		recalculateLinePositions( line, offset, transposeSettings );
 	} );
 }
 
-export function formatOffset( offset ) {
-	if ( offset > 0 ) {
-		return `+${ offset }`;
-	}
-
-	return `${ offset }`;
+function getStorageKey( block ) {
+	return block.dataset.transposeStorageKey || null;
 }
 
-function getStorageKey( block ) {
-	const key = block.dataset.transposeStorageKey;
-
-	if ( ! key ) {
-		return null;
-	}
-
-	return key;
+function hasTransposeControls( block ) {
+	return !! block.querySelector( '[data-transpose-change]' );
 }
 
 function loadOffset( block ) {
 	const storageKey = getStorageKey( block );
 
-	if ( ! storageKey ) {
+	if ( ! storageKey || ! hasTransposeControls( block ) ) {
 		return 0;
 	}
 
@@ -357,7 +364,7 @@ function loadOffset( block ) {
 function saveOffset( block, offset ) {
 	const storageKey = getStorageKey( block );
 
-	if ( ! storageKey ) {
+	if ( ! storageKey || ! hasTransposeControls( block ) ) {
 		return;
 	}
 
@@ -373,6 +380,56 @@ function saveOffset( block, offset ) {
 	}
 }
 
+function observeBlockSize( block ) {
+	if (
+		typeof window.ResizeObserver === 'undefined' ||
+		blockObservers.has( block )
+	) {
+		return;
+	}
+
+	const observer = new window.ResizeObserver( () => {
+		scheduleBlockRefresh( block );
+	} );
+
+	observer.observe( block );
+	blockObservers.set( block, observer );
+}
+
+function flushQueuedBlocks() {
+	refreshFrame = null;
+
+	Array.from( queuedBlocks ).forEach( ( block ) => {
+		queuedBlocks.delete( block );
+
+		if ( block?.isConnected ) {
+			recalculateBlockPositions( block );
+		}
+	} );
+}
+
+function scheduleBlockRefresh( block ) {
+	if ( ! block ) {
+		return;
+	}
+
+	queuedBlocks.add( block );
+
+	if ( refreshFrame !== null ) {
+		return;
+	}
+
+	refreshFrame = window.requestAnimationFrame( flushQueuedBlocks );
+}
+
+export function formatOffset( offset ) {
+	if ( offset > 0 ) {
+		return `+${ offset }`;
+	}
+
+	return `${ offset }`;
+}
+
 export function updateBlock( block, offset ) {
 	if ( ! block ) {
 		return;
@@ -383,36 +440,43 @@ export function updateBlock( block, offset ) {
 		'.chordpro-chord[data-original-chord]'
 	);
 	const keyNode = block.querySelector( '[data-original-key]' );
+	const formattedOffset = formatOffset( offset );
+	const transposeSettings = getBlockTransposeSettings( block, offset );
+
+	block.dataset.transposeOffset = String( offset );
+	block.setAttribute( 'data-transpose-offset', String( offset ) );
+	block.setAttribute( 'data-transpose-label', formattedOffset );
 
 	chordNodes.forEach( ( node ) => {
-		const transposed = transposeChord( node.dataset.originalChord, offset );
+		const transposed = transposeChord( node.dataset.originalChord, offset, {
+			preferFlats: transposeSettings.preferFlats,
+		} );
+
 		node.textContent = transposed;
 	} );
 
-	recalculateBlockPositions( block );
+	recalculateBlockPositions( block, offset, transposeSettings );
 
 	if ( keyNode ) {
-		keyNode.textContent = transposeChord(
-			keyNode.dataset.originalKey,
-			offset
-		);
+		keyNode.textContent = transposeSettings.displayKey;
 	}
 
 	if ( display ) {
-		display.textContent = formatOffset( offset );
+		display.textContent = formattedOffset;
+		display.setAttribute(
+			'aria-label',
+			sprintf(
+				/* translators: %s: current transpose offset, e.g. +2 */
+				__( 'Transpose offset %s semitones', 'chordpro-block' ),
+				formattedOffset
+			)
+		);
 	}
 
 	saveOffset( block, offset );
 
-	block.dataset.transposeOffset = String( offset );
-	block.setAttribute( 'data-transpose-offset', String( offset ) );
-	block.setAttribute( 'data-transpose-label', formatOffset( offset ) );
-	block.setAttribute(
-		'aria-label',
-		`Transpose offset ${ formatOffset( offset ) } semitones`
-	);
-
 	const resetButton = block.querySelector( '[data-transpose-reset]' );
+
 	if ( resetButton ) {
 		resetButton.disabled = offset === 0;
 	}
@@ -431,24 +495,31 @@ export function bindBlock( block ) {
 		return;
 	}
 
-	let offset = loadOffset( block );
+	const controlsAvailable = hasTransposeControls( block );
+	let offset = controlsAvailable ? loadOffset( block ) : 0;
 
-	block.querySelectorAll( '[data-transpose-change]' ).forEach( ( button ) => {
-		button.addEventListener( 'click', () => {
-			offset += Number( button.dataset.transposeChange );
-			updateBlock( block, offset );
-		} );
-	} );
+	if ( controlsAvailable ) {
+		block
+			.querySelectorAll( '[data-transpose-change]' )
+			.forEach( ( button ) => {
+				button.addEventListener( 'click', () => {
+					offset += Number( button.dataset.transposeChange );
+					updateBlock( block, offset );
+				} );
+			} );
 
-	const resetButton = block.querySelector( '[data-transpose-reset]' );
-	if ( resetButton ) {
-		resetButton.addEventListener( 'click', () => {
-			offset = 0;
-			updateBlock( block, offset );
-		} );
+		const resetButton = block.querySelector( '[data-transpose-reset]' );
+
+		if ( resetButton ) {
+			resetButton.addEventListener( 'click', () => {
+				offset = 0;
+				updateBlock( block, offset );
+			} );
+		}
 	}
 
 	block.dataset.transposeBound = 'true';
+	observeBlockSize( block );
 	updateBlock( block, offset );
 }
 
@@ -463,5 +534,5 @@ export function refreshAllBlocks() {
 		.querySelectorAll(
 			'.wp-block-chordpro-block-song[data-transpose-bound="true"]'
 		)
-		.forEach( recalculateBlockPositions );
+		.forEach( scheduleBlockRefresh );
 }

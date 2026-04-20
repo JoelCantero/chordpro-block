@@ -1,13 +1,28 @@
 import { initTransposeControls, refreshAllBlocks } from './transpose';
 
-if ( document.readyState === 'loading' ) {
-	document.addEventListener( 'DOMContentLoaded', initTransposeControls );
-} else {
-	initTransposeControls();
+function debounce( callback, delay ) {
+	let timeoutId;
+
+	return () => {
+		window.clearTimeout( timeoutId );
+		timeoutId = window.setTimeout( callback, delay );
+	};
 }
 
-window.addEventListener( 'resize', refreshAllBlocks );
+function initView() {
+	initTransposeControls();
 
-if ( document.fonts?.ready ) {
-	document.fonts.ready.then( refreshAllBlocks ).catch( () => {} );
+	if ( typeof window.ResizeObserver === 'undefined' ) {
+		window.addEventListener( 'resize', debounce( refreshAllBlocks, 120 ) );
+	}
+
+	if ( document.fonts?.ready ) {
+		document.fonts.ready.then( refreshAllBlocks ).catch( () => {} );
+	}
+}
+
+if ( document.readyState === 'loading' ) {
+	document.addEventListener( 'DOMContentLoaded', initView );
+} else {
+	initView();
 }

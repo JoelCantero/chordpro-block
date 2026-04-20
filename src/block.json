@@ -22,9 +22,9 @@
 			"type": "boolean",
 			"default": false
 		},
-		       "chordColor": {
-			       "type": "string",
-			       "default": ""
+		"chordColor": {
+			"type": "string",
+			"default": ""
 		},
 		"fontFamily": {
 			"type": "string",

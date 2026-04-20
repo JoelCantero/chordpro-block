@@ -1,33 +1,37 @@
 import { __ } from '@wordpress/i18n';
 import { useEffect, useRef, useState } from '@wordpress/element';
-/* eslint-disable @wordpress/no-unsafe-wp-apis */
 import {
-	useBlockProps,
-	InspectorControls,
 	BlockControls,
-	__experimentalColorGradientSettingsDropdown as ColorGradientSettingsDropdown,
-	__experimentalUseMultipleOriginColorsAndGradients as useMultipleOriginColorsAndGradients,
+	InspectorControls,
+	PanelColorSettings,
+	useBlockProps,
 } from '@wordpress/block-editor';
 import {
-	TextareaControl,
-	Placeholder,
-	ToolbarGroup,
-	ToolbarButton,
-	ToggleControl,
 	PanelBody,
+	Placeholder,
 	SelectControl,
+	TextareaControl,
+	ToggleControl,
+	ToolbarButton,
+	ToolbarGroup,
 } from '@wordpress/components';
-import { parseChordPro } from './chordpro-parser';
+import {
+	createChordProDocument,
+	renderChordProDocument,
+} from './chordpro-parser';
 import { formatOffset, updateBlock } from './transpose';
 
-export default function Edit( { attributes, setAttributes, clientId } ) {
+export default function Edit( { attributes, setAttributes } ) {
 	const { content, chordColor, showTitle, showArtist, fontFamily } =
 		attributes;
 	const blockProps = useBlockProps();
-	const colorGradientSettings = useMultipleOriginColorsAndGradients();
 	const [ isPreviewMode, setIsPreviewMode ] = useState( false );
 	const [ transposeOffset, setTransposeOffset ] = useState( 0 );
 	const previewRef = useRef();
+	const previewDocument =
+		isPreviewMode && content ? createChordProDocument( content ) : null;
+	const hasPreviewControls =
+		!! previewDocument?.features.hasTransposableChords;
 
 	useEffect( () => {
 		if ( ! isPreviewMode || ! previewRef.current ) {
@@ -35,7 +39,14 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 		}
 
 		updateBlock( previewRef.current, transposeOffset );
-	}, [ content, isPreviewMode, showTitle, showArtist, transposeOffset ] );
+	}, [
+		content,
+		fontFamily,
+		isPreviewMode,
+		showArtist,
+		showTitle,
+		transposeOffset,
+	] );
 
 	let editorContent;
 
@@ -54,61 +65,68 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 				__nextHasNoMarginBottom={ true }
 			/>
 		);
-	} else if ( content ) {
+	} else if ( content && previewDocument ) {
 		editorContent = (
 			<div className="chordpro-editor__preview" ref={ previewRef }>
-				<div
-					className="chordpro-transpose-controls"
-					role="group"
-					aria-label={ __( 'Transpose chords', 'chordpro-block' ) }
-				>
-					<div className="chordpro-meta-key-row">
-						<strong>
-							{ __( 'Transpose', 'chordpro-block' ) }:
-						</strong>
-						<button
-							type="button"
-							className="chordpro-transpose-button"
-							onClick={ () =>
-								setTransposeOffset( ( value ) => value - 1 )
-							}
-							aria-label={ __(
-								'Lower one semitone',
-								'chordpro-block'
-							) }
-						>
-							-
-						</button>
-						<button
-							type="button"
-							className="chordpro-transpose-button"
-							onClick={ () =>
-								setTransposeOffset( ( value ) => value + 1 )
-							}
-							aria-label={ __(
-								'Raise one semitone',
-								'chordpro-block'
-							) }
-						>
-							+
-						</button>
-						<button
-							type="button"
-							className="chordpro-transpose-reset"
-							onClick={ () => setTransposeOffset( 0 ) }
-							data-transpose-reset
-							disabled={ transposeOffset === 0 }
-						>
-							{ __( 'Reset', 'chordpro-block' ) }
-						</button>
-						<span
-							className="chordpro-editor__transpose-value"
-							data-transpose-display
-						>
-							{ formatOffset( transposeOffset ) }
-						</span>
+				{ hasPreviewControls && (
+					<div
+						className="chordpro-transpose-controls"
+						role="group"
+						aria-label={ __(
+							'Transpose chords',
+							'chordpro-block'
+						) }
+					>
+						<div className="chordpro-meta-key-row">
+							<strong>
+								{ __( 'Transpose', 'chordpro-block' ) }:
+							</strong>
+							<button
+								type="button"
+								className="chordpro-transpose-button"
+								onClick={ () =>
+									setTransposeOffset( ( value ) => value - 1 )
+								}
+								aria-label={ __(
+									'Lower one semitone',
+									'chordpro-block'
+								) }
+							>
+								-
+							</button>
+							<button
+								type="button"
+								className="chordpro-transpose-button"
+								onClick={ () =>
+									setTransposeOffset( ( value ) => value + 1 )
+								}
+								aria-label={ __(
+									'Raise one semitone',
+									'chordpro-block'
+								) }
+							>
+								+
+							</button>
+							<button
+								type="button"
+								className="chordpro-transpose-reset"
+								onClick={ () => setTransposeOffset( 0 ) }
+								data-transpose-reset
+								disabled={ transposeOffset === 0 }
+							>
+								{ __( 'Reset', 'chordpro-block' ) }
+							</button>
+							<span
+								className="chordpro-transpose-value chordpro-editor__transpose-value"
+								data-transpose-display
+								aria-live="polite"
+								aria-atomic="true"
+							>
+								{ formatOffset( transposeOffset ) }
+							</span>
+						</div>
 					</div>
-				</div>
+				) }
 				<div
 					className={ [
 						'chordpro-song',
@@ -120,12 +138,13 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 					style={ {
 						'--chordpro-chord-color': chordColor || '#c0392b',
 					} }
-					// Content is generated by our own parser which escapes all user text.
+					// Content is generated by our own renderer which escapes all user text.
 					// eslint-disable-next-line react/no-danger
 					dangerouslySetInnerHTML={ {
-						__html: parseChordPro( content, {
+						__html: renderChordProDocument( previewDocument, {
 							showTitle,
 							showArtist,
+							includeControls: false,
 						} ),
 					} }
 				/>
@@ -163,25 +182,21 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 				</ToolbarGroup>
 			</BlockControls>
 
-			<InspectorControls group="color">
-				<ColorGradientSettingsDropdown
-					{ ...colorGradientSettings }
-					panelId={ clientId }
-					settings={ [
+			<InspectorControls>
+				<PanelColorSettings
+					title={ __( 'Colors', 'chordpro-block' ) }
+					colorSettings={ [
 						{
 							label: __( 'Chords', 'chordpro-block' ),
-							colorValue: chordColor,
-							onColorChange: ( value ) =>
+							value: chordColor,
+							onChange: ( value ) =>
 								setAttributes( {
 									chordColor: value || '',
 								} ),
 						},
 					] }
-					__experimentalIsRenderedInSidebar={ true }
 				/>
-			</InspectorControls>
 
-			<InspectorControls>
 				<PanelBody
 					title={ __( 'Display', 'chordpro-block' ) }
 					initialOpen={ true }

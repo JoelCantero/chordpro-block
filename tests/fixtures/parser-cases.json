@@ -1,0 +1,75 @@
+[
+	{
+		"name": "renders top matter and transpose controls for transposable chords",
+		"input": "{title: Amazing Grace}\n{artist: John Newton}\n{key: F}\n{tempo: 72}\n[C]Amazing [F]grace",
+		"expected": {
+			"meta": {
+				"title": "Amazing Grace",
+				"artist": "John Newton",
+				"key": "F",
+				"lyrics": "Amazing grace"
+			},
+			"features": {
+				"hasChords": true,
+				"hasTransposableChords": true
+			},
+			"nodeTypes": [ "top_matter", "chord_line" ],
+			"htmlIncludes": [
+				"class=\"chordpro-title\"",
+				"class=\"chordpro-meta-bar\"",
+				"data-original-key=\"F\"",
+				"data-transpose-change=\"1\"",
+				"class=\"chordpro-accessible-line\""
+			],
+			"htmlExcludes": []
+		}
+	},
+	{
+		"name": "keeps non transposable chords without controls",
+		"input": "{title: Spoken Word}\n[N.C.]Hello",
+		"expected": {
+			"meta": {
+				"title": "Spoken Word",
+				"lyrics": "Hello"
+			},
+			"features": {
+				"hasChords": true,
+				"hasTransposableChords": false
+			},
+			"nodeTypes": [ "top_matter", "chord_line" ],
+			"htmlIncludes": [
+				"class=\"chordpro-accessible-line\"",
+				"data-original-chord=\"N.C.\""
+			],
+			"htmlExcludes": [ "data-transpose-change" ]
+		}
+	},
+	{
+		"name": "supports sections tab blocks and lyric spacing",
+		"input": "{subtitle: Live}\n{soc: Chorus}\n[C]Sing\n{eoc}\n{sot}\nE|---0---|\n{eot}\nPlain line",
+		"expected": {
+			"meta": {
+				"subtitle": "Live",
+				"lyrics": "Sing\nPlain line"
+			},
+			"features": {
+				"hasChords": true,
+				"hasTransposableChords": true
+			},
+			"nodeTypes": [
+				"top_matter",
+				"section_start",
+				"chord_line",
+				"section_end",
+				"tab_block",
+				"lyric_line"
+			],
+			"htmlIncludes": [
+				"class=\"chordpro-section chordpro-chorus\"",
+				"class=\"chordpro-tab\"",
+				"Plain line"
+			],
+			"htmlExcludes": []
+		}
+	}
+]
