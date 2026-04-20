@@ -4,7 +4,9 @@ import { isTransposableChord } from './chordpro-transpose';
 const STRUCTURAL_DIRECTIVE_RE =
 	/^[{\[]\s*((?:start_of_|end_of_)(?:verse|chorus|bridge|tab)|sov|eov|soc|eoc|sob|eob|sot|eot)(?:\s*:\s*[^}\]]*)?\s*[}\]]$/i;
 const DIRECTIVE_LINE_RE = /^\{([^}]+)\}$/;
-const CHORD_TOKEN_RE = /\[[^\]]+\]/;
+const ESCAPED_BRACKET_RE = /\\([\[\]])/g;
+const VALID_CHORD_TOKEN_RE =
+	/^(?:N\.?C\.?|[A-G](?:b|#)?(?:maj|min|mi|m|dim|aug|sus|add|omit|no|dom|M|Δ|ø|o|\+|-|[0-9]+|[#b][0-9]+|\([^\s)]+\)|\/[A-G](?:b|#)?)*)$/;
 
 const TOP_MATTER_KEYS = [
 	'title',
@@ -106,8 +108,129 @@ function getTopMatterPriority( key ) {
 	}
 }
 
+function unescapeBracketLiterals( text ) {
+	return text.replace( ESCAPED_BRACKET_RE, '$1' );
+}
+
+function isValidChordToken( token ) {
+	const trimmed = token.trim();
+
+	return !! trimmed && VALID_CHORD_TOKEN_RE.test( trimmed );
+}
+
+function isEscapedCharacter( value, index ) {
+	let slashCount = 0;
+
+	for (
+		let cursor = index - 1;
+		cursor >= 0 && value[ cursor ] === '\\';
+		cursor--
+	) {
+		slashCount++;
+	}
+
+	return slashCount % 2 === 1;
+}
+
+function findClosingBracket( line, startIndex ) {
+	for ( let cursor = startIndex + 1; cursor < line.length; cursor++ ) {
+		if ( line[ cursor ] === ']' && ! isEscapedCharacter( line, cursor ) ) {
+			return cursor;
+		}
+	}
+
+	return -1;
+}
+
+function tokenizeChordLine( line ) {
+	const tokens = [];
+	const entries = [];
+	let buffer = '';
+	let activeEntry = null;
+	let leadingText = '';
+
+	for ( let index = 0; index < line.length; index++ ) {
+		const current = line[ index ];
+		const next = line[ index + 1 ];
+
+		if ( current === '\\' && [ '[', ']' ].includes( next ) ) {
+			buffer += next;
+			index++;
+			continue;
+		}
+
+		if ( current !== '[' ) {
+			buffer += current;
+			continue;
+		}
+
+		const closingBracket = findClosingBracket( line, index );
+
+		if ( closingBracket === -1 ) {
+			buffer += current;
+			continue;
+		}
+
+		const tokenContent = line.substring( index + 1, closingBracket );
+
+		if ( isValidChordToken( tokenContent ) ) {
+			if ( buffer ) {
+				tokens.push( {
+					type: 'text',
+					value: buffer,
+				} );
+				buffer = '';
+			}
+
+			tokens.push( {
+				type: 'chord',
+				value: tokenContent.trim(),
+			} );
+			index = closingBracket;
+			continue;
+		}
+
+		buffer += `[${ unescapeBracketLiterals( tokenContent ) }]`;
+		index = closingBracket;
+	}
+
+	if ( buffer ) {
+		tokens.push( {
+			type: 'text',
+			value: buffer,
+		} );
+	}
+
+	tokens.forEach( ( token ) => {
+		if ( token.type === 'chord' ) {
+			activeEntry = {
+				chord: token.value,
+				lyric: '',
+			};
+			entries.push( activeEntry );
+			return;
+		}
+
+		if ( activeEntry ) {
+			activeEntry.lyric += token.value;
+			return;
+		}
+
+		leadingText += token.value;
+	} );
+
+	if ( entries.length === 0 ) {
+		return null;
+	}
+
+	return {
+		leadingText,
+		entries,
+	};
+}
+
 function hasChordTokens( line ) {
-	return CHORD_TOKEN_RE.test( line );
+	return !! tokenizeChordLine( line );
 }
 
 function buildAccessibleChordLine( leadingText, segments ) {
@@ -133,26 +256,27 @@ function buildAccessibleChordLine( leadingText, segments ) {
 }
 
 function parseChordLine( line ) {
+	const parsedLine = tokenizeChordLine( line );
+
+	if ( ! parsedLine ) {
+		return null;
+	}
+
 	let lyricText = '';
 	const markers = [];
-	const firstBracket = line.indexOf( '[' );
 	let lyricPosition = 0;
 	let chordOffset = 0;
-	let leadingText = '';
+	const leadingText = parsedLine.leadingText;
 	const segments = [];
 
-	if ( firstBracket > 0 ) {
-		leadingText = line.substring( 0, firstBracket );
+	if ( leadingText ) {
 		lyricText += leadingText;
 		lyricPosition += Array.from( leadingText ).length;
 	}
 
-	const pattern = /\[([^\]]*)\]([^[]*)/g;
-	let match;
-
-	while ( ( match = pattern.exec( line ) ) !== null ) {
-		const chord = match[ 1 ];
-		const lyric = match[ 2 ];
+	parsedLine.entries.forEach( ( entry ) => {
+		const chord = entry.chord;
+		const lyric = entry.lyric;
 		const segmentLength = Array.from( lyric ).length;
 		const chordLength = Array.from( chord ).length;
 		const baseLyricPosition = lyricPosition;
@@ -173,7 +297,7 @@ function parseChordLine( line ) {
 		} else {
 			chordOffset += chordLength + 1;
 		}
-	}
+	} );
 
 	return {
 		type: 'chord_line',
@@ -480,6 +604,15 @@ export function createChordProDocument( text ) {
 
 			const chordLine = parseChordLine( line );
 
+			if ( ! chordLine ) {
+				document.nodes.push( {
+					type: 'lyric_line',
+					text: unescapeBracketLiterals( line ),
+				} );
+				lyricsLines.push( unescapeBracketLiterals( line ) );
+				continue;
+			}
+
 			document.features.hasChords = true;
 			document.features.hasTransposableChords =
 				document.features.hasTransposableChords ||
@@ -489,12 +622,14 @@ export function createChordProDocument( text ) {
 			continue;
 		}
 
+		const plainLine = unescapeBracketLiterals( line );
+
 		flushTopMatter( parserState );
 		document.nodes.push( {
 			type: 'lyric_line',
-			text: line,
+			text: plainLine,
 		} );
-		lyricsLines.push( line );
+		lyricsLines.push( plainLine );
 	}
 
 	flushTopMatter( parserState );

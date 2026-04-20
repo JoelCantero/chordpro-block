@@ -56,7 +56,7 @@ export default function Edit( { attributes, setAttributes } ) {
 				className="chordpro-editor__textarea"
 				label={ __( 'ChordPro content', 'chordpro-block' ) }
 				help={ __(
-					'Write your song using ChordPro notation. Place chords inline with [Chord] and use {directive: value} for metadata and section markers.',
+					'Write your song using ChordPro notation. Place chords inline with [Chord], use {directive: value} for metadata and section markers, and escape literal brackets as \\[text\\].',
 					'chordpro-block'
 				) }
 				value={ content }

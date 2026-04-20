@@ -164,8 +164,128 @@ function get_top_matter_priority( string $key ) : int {
 	}
 }
 
+function unescape_bracket_literals( string $value ) : string {
+	return preg_replace( '/\\\\([\[\]])/u', '$1', $value ) ?? $value;
+}
+
+function is_valid_chord_token( string $token ) : bool {
+	$trimmed = trim( $token );
+
+	return '' !== $trimmed && 1 === preg_match( '/^(?:N\.?C\.?|[A-G](?:b|#)?(?:maj|min|mi|m|dim|aug|sus|add|omit|no|dom|M|Δ|ø|o|\+|-|[0-9]+|[#b][0-9]+|\([^\s)]+\)|\/[A-G](?:b|#)?)*)$/u', $trimmed );
+}
+
+function is_escaped_character( string $value, int $index ) : bool {
+	$slash_count = 0;
+
+	for ( $cursor = $index - 1; $cursor >= 0 && '\\' === $value[ $cursor ]; $cursor-- ) {
+		++$slash_count;
+	}
+
+	return 1 === $slash_count % 2;
+}
+
+function find_closing_bracket( string $line, int $start_index ) : int {
+	for ( $cursor = $start_index + 1, $length = strlen( $line ); $cursor < $length; $cursor++ ) {
+		if ( ']' === $line[ $cursor ] && ! is_escaped_character( $line, $cursor ) ) {
+			return $cursor;
+		}
+	}
+
+	return -1;
+}
+
+function tokenize_chord_line( string $line ) : ?array {
+	$tokens        = array();
+	$entries       = array();
+	$buffer        = '';
+	$leading_text  = '';
+	$active_entry  = null;
+	$seen_chord    = false;
+	$length        = strlen( $line );
+
+	for ( $index = 0; $index < $length; $index++ ) {
+		$current = $line[ $index ];
+		$next    = $index + 1 < $length ? $line[ $index + 1 ] : null;
+
+		if ( '\\' === $current && in_array( $next, array( '[', ']' ), true ) ) {
+			$buffer .= $next;
+			++$index;
+			continue;
+		}
+
+		if ( '[' !== $current ) {
+			$buffer .= $current;
+			continue;
+		}
+
+		$closing_bracket = find_closing_bracket( $line, $index );
+
+		if ( -1 === $closing_bracket ) {
+			$buffer .= $current;
+			continue;
+		}
+
+		$token_content = substr( $line, $index + 1, $closing_bracket - $index - 1 );
+
+		if ( is_valid_chord_token( $token_content ) ) {
+			if ( '' !== $buffer ) {
+				$tokens[] = array(
+					'type'  => 'text',
+					'value' => $buffer,
+				);
+				$buffer = '';
+			}
+
+			$tokens[] = array(
+				'type'  => 'chord',
+				'value' => trim( $token_content ),
+			);
+			$index = $closing_bracket;
+			continue;
+		}
+
+		$buffer .= '[' . unescape_bracket_literals( $token_content ) . ']';
+		$index   = $closing_bracket;
+	}
+
+	if ( '' !== $buffer ) {
+		$tokens[] = array(
+			'type'  => 'text',
+			'value' => $buffer,
+		);
+	}
+
+	foreach ( $tokens as $token ) {
+		if ( 'chord' === $token['type'] ) {
+			$entries[] = array(
+				'chord' => $token['value'],
+				'lyric' => '',
+			);
+			$active_entry = count( $entries ) - 1;
+			$seen_chord   = true;
+			continue;
+		}
+
+		if ( $seen_chord && null !== $active_entry ) {
+			$entries[ $active_entry ]['lyric'] .= $token['value'];
+			continue;
+		}
+
+		$leading_text .= $token['value'];
+	}
+
+	if ( empty( $entries ) ) {
+		return null;
+	}
+
+	return array(
+		'leadingText' => $leading_text,
+		'entries'     => $entries,
+	);
+}
+
 function has_chord_tokens( string $line ) : bool {
-	return 1 === preg_match( '/\[[^\]]+\]/u', $line );
+	return null !== tokenize_chord_line( $line );
 }
 
 function normalize_whitespace( string $value ) : string {
@@ -197,26 +317,29 @@ function is_transposable_chord( string $chord ) : bool {
 	return '' !== $trimmed && ! preg_match( '/^(?:N\.?C\.?)$/i', $trimmed ) && 1 === preg_match( '/^([A-G](?:b|#)?)/', $trimmed );
 }
 
-function parse_chord_line( string $line ) : array {
+function parse_chord_line( string $line ) : ?array {
+	$parsed_line    = tokenize_chord_line( $line );
 	$lyric_text    = '';
 	$markers       = array();
 	$segments      = array();
-	$first_bracket = strpos( $line, '[' );
 	$lyric_position = 0;
 	$chord_offset   = 0;
 	$leading_text   = '';
 
-	if ( false !== $first_bracket && $first_bracket > 0 ) {
-		$leading_text    = substr( $line, 0, $first_bracket );
+	if ( null === $parsed_line ) {
+		return null;
+	}
+
+	$leading_text = $parsed_line['leadingText'];
+
+	if ( '' !== $leading_text ) {
 		$lyric_text     .= $leading_text;
 		$lyric_position += string_length( $leading_text );
 	}
 
-	preg_match_all( '/\[([^\]]*)\]([^\[]*)/u', $line, $matches, PREG_SET_ORDER );
-
-	foreach ( $matches as $match ) {
-		$chord            = $match[1];
-		$lyric            = $match[2];
+	foreach ( $parsed_line['entries'] as $entry ) {
+		$chord            = $entry['chord'];
+		$lyric            = $entry['lyric'];
 		$segment_length   = string_length( $lyric );
 		$chord_length     = string_length( $chord );
 		$base_position    = $lyric_position;
@@ -499,6 +622,17 @@ function parse_chordpro_document( string $text ) : array {
 			flush_top_matter( $document, $pending_top_matter, $top_matter_flushed );
 			$chord_line = parse_chord_line( $line );
 
+			if ( null === $chord_line ) {
+				$plain_line = unescape_bracket_literals( $line );
+
+				$document['nodes'][] = array(
+					'type' => 'lyric_line',
+					'text' => $plain_line,
+				);
+				$lyrics_lines[] = $plain_line;
+				continue;
+			}
+
 			$document['features']['hasChords'] = true;
 			$document['features']['hasTransposableChords'] = $document['features']['hasTransposableChords'] || $chord_line['hasTransposableChord'];
 			$document['nodes'][] = $chord_line;
@@ -507,11 +641,13 @@ function parse_chordpro_document( string $text ) : array {
 		}
 
 		flush_top_matter( $document, $pending_top_matter, $top_matter_flushed );
+		$plain_line = unescape_bracket_literals( $line );
+
 		$document['nodes'][] = array(
 			'type' => 'lyric_line',
-			'text' => $line,
+			'text' => $plain_line,
 		);
-		$lyrics_lines[] = $line;
+		$lyrics_lines[] = $plain_line;
 	}
 
 	flush_top_matter( $document, $pending_top_matter, $top_matter_flushed );

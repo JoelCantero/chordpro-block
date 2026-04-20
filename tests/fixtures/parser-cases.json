@@ -71,5 +71,69 @@
 			],
 			"htmlExcludes": []
 		}
+	},
+	{
+		"name": "treats literal bracket text as plain lyrics",
+		"input": "Letra [spoken] aquí",
+		"expected": {
+			"meta": {
+				"lyrics": "Letra [spoken] aquí"
+			},
+			"features": {
+				"hasChords": false,
+				"hasTransposableChords": false
+			},
+			"nodeTypes": [ "lyric_line" ],
+			"htmlIncludes": [
+				"Letra [spoken] aquí"
+			],
+			"htmlExcludes": [
+				"data-original-chord",
+				"chordpro-line-annotated"
+			]
+		}
+	},
+	{
+		"name": "keeps invalid bracket tokens as lyrics inside chord lines",
+		"input": "[C]Letra [spoken] aquí [G]final",
+		"expected": {
+			"meta": {
+				"lyrics": "Letra [spoken] aquí final"
+			},
+			"features": {
+				"hasChords": true,
+				"hasTransposableChords": true
+			},
+			"nodeTypes": [ "chord_line" ],
+			"htmlIncludes": [
+				"data-original-chord=\"C\"",
+				"data-original-chord=\"G\"",
+				"[spoken]"
+			],
+			"htmlExcludes": [
+				"data-original-chord=\"spoken\""
+			]
+		}
+	},
+	{
+		"name": "supports escaped bracket literals",
+		"input": "\\[C\\] no es acorde",
+		"expected": {
+			"meta": {
+				"lyrics": "[C] no es acorde"
+			},
+			"features": {
+				"hasChords": false,
+				"hasTransposableChords": false
+			},
+			"nodeTypes": [ "lyric_line" ],
+			"htmlIncludes": [
+				"[C] no es acorde"
+			],
+			"htmlExcludes": [
+				"data-original-chord",
+				"chordpro-line-annotated"
+			]
+		}
 	}
 ]
