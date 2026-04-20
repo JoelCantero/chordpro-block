@@ -14,14 +14,7 @@
 				"hasTransposableChords": true
 			},
 			"nodeTypes": [ "top_matter", "chord_line" ],
-			"htmlIncludes": [
-				"class=\"chordpro-title\"",
-				"class=\"chordpro-meta-bar\"",
-				"data-original-key=\"F\"",
-				"data-transpose-change=\"1\"",
-				"class=\"chordpro-accessible-line\""
-			],
-			"htmlExcludes": []
+			"html": "<div class=\"chordpro-title\">Amazing Grace</div><div class=\"chordpro-artist\">John Newton</div><div class=\"chordpro-meta-bar\"><div class=\"chordpro-meta\"><strong class=\"chordpro-meta-label\">Tempo:</strong><span class=\"chordpro-meta-value\">72</span></div><div class=\"chordpro-meta\"><strong class=\"chordpro-meta-label\">Key:</strong><span class=\"chordpro-meta-value\" data-original-key=\"F\">F</span></div></div><div class=\"chordpro-transpose-row\"><div class=\"chordpro-transpose-controls\" role=\"group\" aria-label=\"Transpose chords\"><strong class=\"chordpro-meta-label\">Transpose:</strong><button type=\"button\" class=\"chordpro-transpose-button\" data-transpose-change=\"-1\" aria-label=\"Lower one semitone\">-</button><button type=\"button\" class=\"chordpro-transpose-button\" data-transpose-change=\"1\" aria-label=\"Raise one semitone\">+</button><button type=\"button\" class=\"chordpro-transpose-reset\" data-transpose-reset disabled aria-label=\"Reset\">Reset</button><span class=\"chordpro-transpose-value\" data-transpose-display aria-live=\"polite\" aria-atomic=\"true\">0</span></div></div><div class=\"chordpro-line chordpro-line-annotated\"><span class=\"chordpro-accessible-line\">C Amazing F grace</span><div class=\"chordpro-chords\" aria-hidden=\"true\"><p class=\"chordpro-chord\" data-original-chord=\"C\" data-lyric-position=\"0\" data-lyric-segment-length=\"8\" style=\"left:0ch\">C</p><p class=\"chordpro-chord\" data-original-chord=\"F\" data-lyric-position=\"8\" data-lyric-segment-length=\"5\" style=\"left:8ch\">F</p></div><p class=\"chordpro-lyric chordpro-lyric-full\" aria-hidden=\"true\">Amazing grace</p></div>"
 		}
 	},
 	{
@@ -37,11 +30,7 @@
 				"hasTransposableChords": false
 			},
 			"nodeTypes": [ "top_matter", "chord_line" ],
-			"htmlIncludes": [
-				"class=\"chordpro-accessible-line\"",
-				"data-original-chord=\"N.C.\""
-			],
-			"htmlExcludes": [ "data-transpose-change" ]
+			"html": "<div class=\"chordpro-title\">Spoken Word</div><div class=\"chordpro-line chordpro-line-annotated\"><span class=\"chordpro-accessible-line\">N.C. Hello</span><div class=\"chordpro-chords\" aria-hidden=\"true\"><p class=\"chordpro-chord\" data-original-chord=\"N.C.\" data-lyric-position=\"0\" data-lyric-segment-length=\"5\" style=\"left:0ch\">N.C.</p></div><p class=\"chordpro-lyric chordpro-lyric-full\" aria-hidden=\"true\">Hello</p></div>"
 		}
 	},
 	{
@@ -64,12 +53,7 @@
 				"tab_block",
 				"lyric_line"
 			],
-			"htmlIncludes": [
-				"class=\"chordpro-section chordpro-chorus\"",
-				"class=\"chordpro-tab\"",
-				"Plain line"
-			],
-			"htmlExcludes": []
+			"html": "<div class=\"chordpro-transpose-controls\" role=\"group\" aria-label=\"Transpose chords\"><strong class=\"chordpro-meta-label\">Transpose:</strong><button type=\"button\" class=\"chordpro-transpose-button\" data-transpose-change=\"-1\" aria-label=\"Lower one semitone\">-</button><button type=\"button\" class=\"chordpro-transpose-button\" data-transpose-change=\"1\" aria-label=\"Raise one semitone\">+</button><button type=\"button\" class=\"chordpro-transpose-reset\" data-transpose-reset disabled aria-label=\"Reset\">Reset</button><span class=\"chordpro-transpose-value\" data-transpose-display aria-live=\"polite\" aria-atomic=\"true\">0</span></div><div class=\"chordpro-subtitle\">Live</div><div class=\"chordpro-section chordpro-chorus\"><div class=\"chordpro-section-label\">Chorus</div><div class=\"chordpro-line chordpro-line-annotated\"><span class=\"chordpro-accessible-line\">C Sing</span><div class=\"chordpro-chords\" aria-hidden=\"true\"><p class=\"chordpro-chord\" data-original-chord=\"C\" data-lyric-position=\"0\" data-lyric-segment-length=\"4\" style=\"left:0ch\">C</p></div><p class=\"chordpro-lyric chordpro-lyric-full\" aria-hidden=\"true\">Sing</p></div></div><pre class=\"chordpro-tab\">E|---0---|</pre><div class=\"chordpro-line\"><p class=\"chordpro-lyric chordpro-lyric-plain\">Plain line</p></div>"
 		}
 	}
 ]

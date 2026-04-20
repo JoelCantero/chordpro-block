@@ -8,24 +8,153 @@
 
 namespace ChordProBlock\Parser;
 
-function default_labels() : array {
-	return array(
-		'verse'             => 'Verse',
-		'chorus'            => 'Chorus',
-		'bridge'            => 'Bridge',
-		'keyLabel'          => 'Key',
-		'capoLabel'         => 'Capo',
-		'tempo'             => 'Tempo',
-		'time'              => 'Time',
-		'duration'          => 'Duration',
-		'transpose'         => 'Transpose',
-		'transposeChords'   => 'Transpose chords',
-		'lowerSemitone'     => 'Lower one semitone',
-		'raiseSemitone'     => 'Raise one semitone',
-		'reset'             => 'Reset',
-		'transposeOffset'   => 'Transpose offset 0 semitones',
-		'songLyricsDefault' => 'Song Lyrics',
+require_once __DIR__ . '/generated/chordpro-spec.php';
+
+function get_spec() : array {
+	return get_chordpro_shared_spec();
+}
+
+function get_label_definitions() : array {
+	return get_spec()['labels'] ?? array();
+}
+
+function get_node_types() : array {
+	return get_spec()['document']['nodeTypes'] ?? array();
+}
+
+function get_top_matter_item( string $key ) : ?array {
+	$items = get_spec()['topMatter']['items'] ?? array();
+
+	return $items[ $key ] ?? null;
+}
+
+function get_directive_node_config( string $key ) : ?array {
+	$config = get_spec()['directiveNodes'] ?? array();
+
+	return $config[ $key ] ?? null;
+}
+
+function get_directive_render_config( string $key ) : ?array {
+	$config = get_spec()['render']['directiveNodes'] ?? array();
+
+	return $config[ $key ] ?? null;
+}
+
+function compile_preg_pattern( string $source, string $flags = '' ) : string {
+	return '/' . str_replace( '/', '\/', $source ) . '/' . $flags;
+}
+
+function get_structural_directive_pattern() : string {
+	static $pattern = null;
+
+	if ( null !== $pattern ) {
+		return $pattern;
+	}
+
+	$spec         = get_spec();
+	$structural   = $spec['structuralDirectives'] ?? array();
+	$section_keys = array_keys( $structural['sectionStarts'] ?? array() );
+	$section_ends = $structural['sectionEnds'] ?? array();
+	$tab_starts   = $structural['tabs']['starts'] ?? array();
+	$tab_ends     = $structural['tabs']['ends'] ?? array();
+	$keys         = array_values(
+		array_unique(
+			array_merge(
+				$section_keys,
+				$section_ends,
+				$tab_starts,
+				$tab_ends
+			)
+		)
 	);
+
+	usort(
+		$keys,
+		static function ( string $first, string $second ) : int {
+			return strlen( $second ) <=> strlen( $first );
+		}
+	);
+
+	$pattern = '/^[{\[]\s*((' . implode(
+		'|',
+		array_map(
+			static function ( string $value ) : string {
+				return preg_quote( $value, '/' );
+			},
+			$keys
+		)
+	) . ')(?:\s*:\s*[^}\]]*)?)\s*[}\]]$/i';
+
+	return $pattern;
+}
+
+function get_directive_line_pattern() : string {
+	static $pattern = null;
+
+	if ( null !== $pattern ) {
+		return $pattern;
+	}
+
+	$pattern = compile_preg_pattern(
+		get_spec()['patterns']['directiveLine'] ?? '^\\{([^}]+)\\}$',
+		'u'
+	);
+
+	return $pattern;
+}
+
+function get_chord_token_pattern() : string {
+	static $pattern = null;
+
+	if ( null !== $pattern ) {
+		return $pattern;
+	}
+
+	$pattern = compile_preg_pattern(
+		get_spec()['patterns']['chordToken'] ?? '\\[[^\\]]+\\]',
+		'u'
+	);
+
+	return $pattern;
+}
+
+function get_section_label_prefix_pattern() : string {
+	static $pattern = null;
+
+	if ( null !== $pattern ) {
+		return $pattern;
+	}
+
+	$variants = get_spec()['render']['sectionLabelVariants'] ?? array();
+
+	usort(
+		$variants,
+		static function ( string $first, string $second ) : int {
+			return strlen( $second ) <=> strlen( $first );
+		}
+	);
+
+	$pattern = '/^(' . implode(
+		'|',
+		array_map(
+			static function ( string $value ) : string {
+				return preg_quote( $value, '/' );
+			},
+			$variants
+		)
+	) . ')(\b.*)$/i';
+
+	return $pattern;
+}
+
+function default_labels() : array {
+	$labels = array();
+
+	foreach ( get_label_definitions() as $key => $definition ) {
+		$labels[ $key ] = $definition['text'];
+	}
+
+	return $labels;
 }
 
 function get_labels( array $overrides = array() ) : array {
@@ -44,30 +173,6 @@ function string_length( string $value ) : int {
 	preg_match_all( '/./us', $value, $matches );
 
 	return count( $matches[0] );
-}
-
-function string_substr( string $value, int $start, ?int $length = null ) : string {
-	if ( function_exists( 'mb_substr' ) ) {
-		return null === $length ? mb_substr( $value, $start ) : mb_substr( $value, $start, $length );
-	}
-
-	$chars = preg_split( '//u', $value, -1, PREG_SPLIT_NO_EMPTY );
-
-	if ( false === $chars ) {
-		return '';
-	}
-
-	$slice = null === $length ? array_slice( $chars, $start ) : array_slice( $chars, $start, $length );
-
-	return implode( '', $slice );
-}
-
-function string_pos( string $value, string $needle ) {
-	if ( function_exists( 'mb_strpos' ) ) {
-		return mb_strpos( $value, $needle );
-	}
-
-	return strpos( $value, $needle );
 }
 
 function get_directive_parts( string $raw ) : array {
@@ -90,7 +195,7 @@ function get_directive_parts( string $raw ) : array {
 function extract_structural_directive( string $line ) : ?string {
 	$trimmed = trim( $line );
 
-	if ( ! preg_match( '/^[{\[]\s*((?:start_of_|end_of_)(?:verse|chorus|bridge|tab)|sov|eov|soc|eoc|sob|eob|sot|eot)(?:\s*:\s*[^}\]]*)?\s*[}\]]$/i', $trimmed, $matches ) ) {
+	if ( ! preg_match( get_structural_directive_pattern(), $trimmed, $matches ) ) {
 		return null;
 	}
 
@@ -98,74 +203,23 @@ function extract_structural_directive( string $line ) : ?string {
 }
 
 function normalize_top_matter_key( string $key ) : string {
-	switch ( $key ) {
-		case 't':
-			return 'title';
-		case 'st':
-			return 'subtitle';
-		default:
-			return $key;
-	}
+	return get_top_matter_item( $key )['canonicalKey'] ?? $key;
 }
 
 function is_top_matter_directive_key( string $key ) : bool {
-	return in_array(
-		$key,
-		array(
-			'title',
-			't',
-			'subtitle',
-			'st',
-			'artist',
-			'composer',
-			'lyricist',
-			'tempo',
-			'key',
-			'capo',
-			'time',
-			'duration',
-		),
-		true
-	);
+	return null !== get_top_matter_item( $key );
 }
 
 function is_meta_row_directive_key( string $key ) : bool {
-	return in_array(
-		normalize_top_matter_key( $key ),
-		array( 'tempo', 'key', 'capo', 'time', 'duration' ),
-		true
-	);
+	return 'meta_row' === ( get_top_matter_item( $key )['group'] ?? null );
 }
 
 function get_top_matter_priority( string $key ) : int {
-	switch ( normalize_top_matter_key( $key ) ) {
-		case 'title':
-			return 0;
-		case 'subtitle':
-			return 1;
-		case 'artist':
-			return 2;
-		case 'composer':
-			return 3;
-		case 'lyricist':
-			return 4;
-		case 'tempo':
-			return 5;
-		case 'key':
-			return 6;
-		case 'capo':
-			return 7;
-		case 'time':
-			return 8;
-		case 'duration':
-			return 9;
-		default:
-			return 100;
-	}
+	return get_top_matter_item( $key )['priority'] ?? 100;
 }
 
 function has_chord_tokens( string $line ) : bool {
-	return 1 === preg_match( '/\[[^\]]+\]/u', $line );
+	return 1 === preg_match( get_chord_token_pattern(), $line );
 }
 
 function normalize_whitespace( string $value ) : string {
@@ -173,7 +227,7 @@ function normalize_whitespace( string $value ) : string {
 }
 
 function build_accessible_chord_line( string $leading_text, array $segments ) : string {
-	$parts = array();
+	$parts                   = array();
 	$normalized_leading_text = normalize_whitespace( $leading_text );
 
 	if ( '' !== $normalized_leading_text ) {
@@ -198,13 +252,14 @@ function is_transposable_chord( string $chord ) : bool {
 }
 
 function parse_chord_line( string $line ) : array {
-	$lyric_text    = '';
-	$markers       = array();
-	$segments      = array();
-	$first_bracket = strpos( $line, '[' );
-	$lyric_position = 0;
-	$chord_offset   = 0;
-	$leading_text   = '';
+	$node_types      = get_node_types();
+	$lyric_text      = '';
+	$markers         = array();
+	$segments        = array();
+	$first_bracket   = strpos( $line, '[' );
+	$lyric_position  = 0;
+	$chord_offset    = 0;
+	$leading_text    = '';
 
 	if ( false !== $first_bracket && $first_bracket > 0 ) {
 		$leading_text    = substr( $line, 0, $first_bracket );
@@ -215,12 +270,12 @@ function parse_chord_line( string $line ) : array {
 	preg_match_all( '/\[([^\]]*)\]([^\[]*)/u', $line, $matches, PREG_SET_ORDER );
 
 	foreach ( $matches as $match ) {
-		$chord            = $match[1];
-		$lyric            = $match[2];
-		$segment_length   = string_length( $lyric );
-		$chord_length     = string_length( $chord );
-		$base_position    = $lyric_position;
-		$chord_position   = $lyric_position + $chord_offset;
+		$chord          = $match[1];
+		$lyric          = $match[2];
+		$segment_length = string_length( $lyric );
+		$chord_length   = string_length( $chord );
+		$base_position  = $lyric_position;
+		$chord_position = $lyric_position + $chord_offset;
 
 		$markers[] = array(
 			'chord'              => $chord,
@@ -252,52 +307,28 @@ function parse_chord_line( string $line ) : array {
 	}
 
 	return array(
-		'type'                => 'chord_line',
-		'lyricText'           => $lyric_text,
-		'accessibleText'      => build_accessible_chord_line( $leading_text, $segments ),
-		'markers'             => $markers,
+		'type'                 => $node_types['chordLine'],
+		'lyricText'            => $lyric_text,
+		'accessibleText'       => build_accessible_chord_line( $leading_text, $segments ),
+		'markers'              => $markers,
 		'hasTransposableChord' => $has_transposable,
 	);
 }
 
 function create_empty_document() : array {
+	$spec = get_spec();
+
 	return array(
-		'meta'     => array(
-			'title'     => '',
-			'subtitle'  => '',
-			'artist'    => '',
-			'composer'  => '',
-			'lyricist'  => '',
-			'key'       => '',
-			'lyrics'    => '',
-		),
-		'features' => array(
-			'hasChords'             => false,
-			'hasTransposableChords' => false,
-		),
+		'meta'     => $spec['document']['metaDefaults'] ?? array(),
+		'features' => $spec['document']['featureDefaults'] ?? array(),
 		'nodes'    => array(),
 	);
 }
 
 function assign_meta_value( array &$document, string $key, string $value ) : void {
-	$meta_key_map = array(
-		'title'    => 'title',
-		't'        => 'title',
-		'subtitle' => 'subtitle',
-		'st'       => 'subtitle',
-		'artist'   => 'artist',
-		'composer' => 'composer',
-		'lyricist' => 'lyricist',
-		'key'      => 'key',
-	);
+	$meta_key = get_top_matter_item( $key )['metaKey'] ?? null;
 
-	if ( ! isset( $meta_key_map[ $key ] ) ) {
-		return;
-	}
-
-	$meta_key = $meta_key_map[ $key ];
-
-	if ( '' !== $document['meta'][ $meta_key ] ) {
+	if ( null === $meta_key || '' !== $document['meta'][ $meta_key ] ) {
 		return;
 	}
 
@@ -305,6 +336,8 @@ function assign_meta_value( array &$document, string $key, string $value ) : voi
 }
 
 function flush_top_matter( array &$document, array &$pending_top_matter, bool &$top_matter_flushed ) : void {
+	$node_types = get_node_types();
+
 	if ( $top_matter_flushed ) {
 		return;
 	}
@@ -316,75 +349,52 @@ function flush_top_matter( array &$document, array &$pending_top_matter, bool &$
 	}
 
 	$document['nodes'][] = array(
-		'type'  => 'top_matter',
+		'type'  => $node_types['topMatter'],
 		'items' => array_values( $pending_top_matter ),
 	);
 }
 
 function get_section_type( string $key ) : ?string {
-	switch ( $key ) {
-		case 'start_of_chorus':
-		case 'soc':
-			return 'chorus';
-		case 'start_of_verse':
-		case 'sov':
-			return 'verse';
-		case 'start_of_bridge':
-		case 'sob':
-			return 'bridge';
-		default:
-			return null;
-	}
+	return get_spec()['structuralDirectives']['sectionStarts'][ $key ] ?? null;
 }
 
 function is_section_end_key( string $key ) : bool {
-	return in_array(
-		$key,
-		array( 'end_of_chorus', 'eoc', 'end_of_verse', 'eov', 'end_of_bridge', 'eob' ),
-		true
-	);
+	return in_array( $key, get_spec()['structuralDirectives']['sectionEnds'] ?? array(), true );
+}
+
+function is_tab_start_key( string $key ) : bool {
+	return in_array( $key, get_spec()['structuralDirectives']['tabs']['starts'] ?? array(), true );
+}
+
+function is_tab_end_key( string $key ) : bool {
+	return in_array( $key, get_spec()['structuralDirectives']['tabs']['ends'] ?? array(), true );
 }
 
 function create_directive_node( string $key, string $value ) : ?array {
-	switch ( $key ) {
-		case 'title':
-		case 't':
-		case 'subtitle':
-		case 'st':
-		case 'artist':
-		case 'composer':
-		case 'lyricist':
-		case 'tempo':
-		case 'key':
-		case 'capo':
-		case 'time':
-		case 'duration':
-			return array(
-				'type'  => 'directive',
-				'key'   => $key,
-				'value' => $value,
-			);
-		case 'comment':
-		case 'c':
-			return array(
-				'type'    => 'comment',
-				'variant' => 'comment',
-				'value'   => $value,
-			);
-		case 'chorus':
-		case 'verse':
-		case 'bridge':
-			return array(
-				'type'    => 'comment',
-				'variant' => $key,
-				'value'   => '',
-			);
-		default:
-			return null;
+	$node_types = get_node_types();
+	$config     = get_directive_node_config( $key );
+
+	if ( null === $config ) {
+		return null;
 	}
+
+	if ( $node_types['directive'] === $config['type'] ) {
+		return array(
+			'type'  => $node_types['directive'],
+			'key'   => $key,
+			'value' => $value,
+		);
+	}
+
+	return array(
+		'type'    => $node_types['comment'],
+		'variant' => $config['variant'],
+		'value'   => false === ( $config['includeValue'] ?? true ) ? '' : $value,
+	);
 }
 
 function parse_chordpro_document( string $text ) : array {
+	$node_types         = get_node_types();
 	$lines              = explode( "\n", $text );
 	$document           = create_empty_document();
 	$lyrics_lines       = array();
@@ -393,7 +403,7 @@ function parse_chordpro_document( string $text ) : array {
 	$section_stack      = array();
 
 	for ( $index = 0, $count = count( $lines ); $index < $count; $index++ ) {
-		$line = rtrim( $lines[ $index ] );
+		$line                 = rtrim( $lines[ $index ] );
 		$structural_directive = extract_structural_directive( $line );
 
 		if ( null !== $structural_directive ) {
@@ -401,18 +411,18 @@ function parse_chordpro_document( string $text ) : array {
 			$key             = $directive_parts['key'];
 			$value           = $directive_parts['value'];
 
-			if ( in_array( $key, array( 'start_of_tab', 'sot' ), true ) ) {
+			if ( is_tab_start_key( $key ) ) {
 				flush_top_matter( $document, $pending_top_matter, $top_matter_flushed );
 				$tab_lines = array();
 
 				for ( $cursor = $index + 1; $cursor < $count; $cursor++ ) {
-					$tab_line = rtrim( $lines[ $cursor ] );
-					$end_directive = extract_structural_directive( $tab_line );
+					$tab_line       = rtrim( $lines[ $cursor ] );
+					$end_directive  = extract_structural_directive( $tab_line );
 
 					if ( null !== $end_directive ) {
 						$end_parts = get_directive_parts( $end_directive );
 
-						if ( in_array( $end_parts['key'], array( 'end_of_tab', 'eot' ), true ) ) {
+						if ( is_tab_end_key( $end_parts['key'] ) ) {
 							$index = $cursor;
 							break;
 						}
@@ -426,7 +436,7 @@ function parse_chordpro_document( string $text ) : array {
 				}
 
 				$document['nodes'][] = array(
-					'type'  => 'tab_block',
+					'type'  => $node_types['tabBlock'],
 					'lines' => $tab_lines,
 				);
 				continue;
@@ -438,7 +448,7 @@ function parse_chordpro_document( string $text ) : array {
 				flush_top_matter( $document, $pending_top_matter, $top_matter_flushed );
 				$section_stack[] = $section_type;
 				$document['nodes'][] = array(
-					'type'        => 'section_start',
+					'type'        => $node_types['sectionStart'],
 					'sectionType' => $section_type,
 					'label'       => $value,
 				);
@@ -450,7 +460,7 @@ function parse_chordpro_document( string $text ) : array {
 
 				if ( ! empty( $section_stack ) ) {
 					$document['nodes'][] = array(
-						'type'        => 'section_end',
+						'type'        => $node_types['sectionEnd'],
 						'sectionType' => array_pop( $section_stack ),
 					);
 				}
@@ -458,7 +468,7 @@ function parse_chordpro_document( string $text ) : array {
 			}
 		}
 
-		if ( preg_match( '/^\{([^}]+)\}$/', trim( $line ), $directive_match ) ) {
+		if ( preg_match( get_directive_line_pattern(), trim( $line ), $directive_match ) ) {
 			$directive_parts = get_directive_parts( $directive_match[1] );
 			$key             = $directive_parts['key'];
 			$value           = $directive_parts['value'];
@@ -489,7 +499,7 @@ function parse_chordpro_document( string $text ) : array {
 		if ( '' === trim( $line ) ) {
 			flush_top_matter( $document, $pending_top_matter, $top_matter_flushed );
 			$document['nodes'][] = array(
-				'type' => 'spacer',
+				'type' => $node_types['spacer'],
 			);
 			$lyrics_lines[] = '';
 			continue;
@@ -499,16 +509,16 @@ function parse_chordpro_document( string $text ) : array {
 			flush_top_matter( $document, $pending_top_matter, $top_matter_flushed );
 			$chord_line = parse_chord_line( $line );
 
-			$document['features']['hasChords'] = true;
+			$document['features']['hasChords']             = true;
 			$document['features']['hasTransposableChords'] = $document['features']['hasTransposableChords'] || $chord_line['hasTransposableChord'];
-			$document['nodes'][] = $chord_line;
-			$lyrics_lines[] = $chord_line['lyricText'];
+			$document['nodes'][]                           = $chord_line;
+			$lyrics_lines[]                                = $chord_line['lyricText'];
 			continue;
 		}
 
 		flush_top_matter( $document, $pending_top_matter, $top_matter_flushed );
 		$document['nodes'][] = array(
-			'type' => 'lyric_line',
+			'type' => $node_types['lyricLine'],
 			'text' => $line,
 		);
 		$lyrics_lines[] = $line;
@@ -518,7 +528,7 @@ function parse_chordpro_document( string $text ) : array {
 
 	while ( ! empty( $section_stack ) ) {
 		$document['nodes'][] = array(
-			'type'        => 'section_end',
+			'type'        => $node_types['sectionEnd'],
 			'sectionType' => array_pop( $section_stack ),
 		);
 	}
@@ -529,7 +539,7 @@ function parse_chordpro_document( string $text ) : array {
 }
 
 function translate_section_label_prefix( string $value, array $labels ) : string {
-	if ( ! preg_match( '/^(verse|chorus|bridge)(\b.*)$/i', $value, $matches ) ) {
+	if ( ! preg_match( get_section_label_prefix_pattern(), $value, $matches ) ) {
 		return $value;
 	}
 
@@ -543,46 +553,67 @@ function translate_section_label_prefix( string $value, array $labels ) : string
 }
 
 function render_transpose_controls_markup( array $labels ) : string {
-	return '<div class="chordpro-transpose-controls" role="group" aria-label="' . escape_html( $labels['transposeChords'] ) . '"><strong class="chordpro-meta-label">' . escape_html( $labels['transpose'] ) . ':</strong><button type="button" class="chordpro-transpose-button" data-transpose-change="-1" aria-label="' . escape_html( $labels['lowerSemitone'] ) . '">-</button><button type="button" class="chordpro-transpose-button" data-transpose-change="1" aria-label="' . escape_html( $labels['raiseSemitone'] ) . '">+</button><button type="button" class="chordpro-transpose-reset" data-transpose-reset disabled>' . escape_html( $labels['reset'] ) . '</button><span class="chordpro-transpose-value" data-transpose-display aria-live="polite" aria-atomic="true">0</span></div>';
+	$config  = get_spec()['render']['transposeControls'];
+	$buttons = '';
+
+	foreach ( $config['buttons'] as $button ) {
+		$attributes = array(
+			'type="button"',
+			'class="' . escape_html( $button['className'] ) . '"',
+			'aria-label="' . escape_html( $labels[ $button['labelKey'] ] ) . '"',
+		);
+
+		if ( 'change' === $button['kind'] ) {
+			$attributes[] = 'data-transpose-change="' . escape_html( $button['value'] ) . '"';
+		} elseif ( 'reset' === $button['kind'] ) {
+			$attributes[] = 'data-transpose-reset';
+		}
+
+		if ( ! empty( $button['disabled'] ) ) {
+			$attributes[] = 'disabled';
+		}
+
+		$label_text = isset( $button['textLabelKey'] ) ? $labels[ $button['textLabelKey'] ] : $button['text'];
+		$buttons   .= '<button ' . implode( ' ', $attributes ) . '>' . escape_html( $label_text ) . '</button>';
+	}
+
+	$display = $config['display'];
+
+	return '<div class="chordpro-transpose-controls" role="group" aria-label="' . escape_html( $labels[ $config['groupLabelKey'] ] ) . '"><strong class="chordpro-meta-label">' . escape_html( $labels[ $config['titleLabelKey'] ] ) . ':</strong>' . $buttons . '<span class="' . escape_html( $display['className'] ) . '" data-transpose-display aria-live="' . escape_html( $display['ariaLive'] ) . '" aria-atomic="' . escape_html( $display['ariaAtomic'] ) . '">' . escape_html( $display['initialValue'] ) . '</span></div>';
 }
 
 function render_directive_node( array $node, array $options, array $labels ) : string {
-	switch ( $node['key'] ) {
-		case 'title':
-		case 't':
-			if ( empty( $options['showTitle'] ) ) {
-				return '';
-			}
-			return '<div class="chordpro-title">' . escape_html( $node['value'] ) . '</div>';
-		case 'subtitle':
-		case 'st':
-			return '<div class="chordpro-subtitle">' . escape_html( $node['value'] ) . '</div>';
-		case 'artist':
-			if ( empty( $options['showArtist'] ) ) {
-				return '';
-			}
-			return '<div class="chordpro-artist">' . escape_html( $node['value'] ) . '</div>';
-		case 'composer':
-			return '<div class="chordpro-composer">' . escape_html( $node['value'] ) . '</div>';
-		case 'lyricist':
-			return '<div class="chordpro-lyricist">' . escape_html( $node['value'] ) . '</div>';
-		case 'key':
-			return '<div class="chordpro-meta"><strong class="chordpro-meta-label">' . escape_html( $labels['keyLabel'] ) . ':</strong><span class="chordpro-meta-value" data-original-key="' . escape_html( $node['value'] ) . '">' . escape_html( $node['value'] ) . '</span></div>';
-		case 'capo':
-			return '<div class="chordpro-meta"><strong class="chordpro-meta-label">' . escape_html( $labels['capoLabel'] ) . ':</strong><span class="chordpro-meta-value">' . escape_html( $node['value'] ) . '</span></div>';
-		case 'tempo':
-			return '<div class="chordpro-meta"><strong class="chordpro-meta-label">' . escape_html( $labels['tempo'] ) . ':</strong><span class="chordpro-meta-value">' . escape_html( $node['value'] ) . '</span></div>';
-		case 'time':
-			return '<div class="chordpro-meta"><strong class="chordpro-meta-label">' . escape_html( $labels['time'] ) . ':</strong><span class="chordpro-meta-value">' . escape_html( $node['value'] ) . '</span></div>';
-		case 'duration':
-			return '<div class="chordpro-meta"><strong class="chordpro-meta-label">' . escape_html( $labels['duration'] ) . ':</strong><span class="chordpro-meta-value">' . escape_html( $node['value'] ) . '</span></div>';
-		default:
-			return '';
+	$config = get_directive_render_config( $node['key'] );
+
+	if ( null === $config ) {
+		return '';
 	}
+
+	if ( ! empty( $config['option'] ) && empty( $options[ $config['option'] ] ) ) {
+		return '';
+	}
+
+	if ( 'text' === $config['kind'] ) {
+		return '<div class="' . escape_html( $config['className'] ) . '">' . escape_html( $node['value'] ) . '</div>';
+	}
+
+	if ( 'meta' === $config['kind'] ) {
+		$data_attribute = '';
+
+		if ( ! empty( $config['dataAttribute'] ) ) {
+			$data_attribute = ' ' . $config['dataAttribute'] . '="' . escape_html( $node['value'] ) . '"';
+		}
+
+		return '<div class="chordpro-meta"><strong class="chordpro-meta-label">' . escape_html( $labels[ $config['labelKey'] ] ) . ':</strong><span class="chordpro-meta-value"' . $data_attribute . '>' . escape_html( $node['value'] ) . '</span></div>';
+	}
+
+	return '';
 }
 
 function render_top_matter_node( array $node, array &$state, array $options, array $labels ) : string {
-	$items = $node['items'];
+	$node_types = get_node_types();
+	$items      = $node['items'];
+
 	usort(
 		$items,
 		static function ( array $first, array $second ) : int {
@@ -594,13 +625,13 @@ function render_top_matter_node( array $node, array &$state, array $options, arr
 		}
 	);
 
-	$html          = '';
+	$html           = '';
 	$meta_row_items = array();
 
 	foreach ( $items as $item ) {
 		$rendered = render_directive_node(
 			array(
-				'type'  => 'directive',
+				'type'  => $node_types['directive'],
 				'key'   => $item['key'],
 				'value' => $item['value'],
 			),
@@ -653,30 +684,31 @@ function render_chord_line_node( array $node ) : string {
 }
 
 function render_chordpro_document( array $document, array $options = array() ) : string {
-	$render_options = array(
+	$node_types      = get_node_types();
+	$render_options  = array(
 		'showTitle'       => array_key_exists( 'showTitle', $options ) ? (bool) $options['showTitle'] : true,
 		'showArtist'      => array_key_exists( 'showArtist', $options ) ? (bool) $options['showArtist'] : true,
 		'includeControls' => array_key_exists( 'includeControls', $options ) ? (bool) $options['includeControls'] : (bool) $document['features']['hasTransposableChords'],
 	);
-	$labels = get_labels( $options['labels'] ?? array() );
-	$state  = array(
+	$labels          = get_labels( $options['labels'] ?? array() );
+	$state           = array(
 		'controlsRendered' => false,
 		'openSections'     => 0,
 	);
-	$html = '';
+	$html            = '';
 
 	foreach ( $document['nodes'] as $node ) {
 		switch ( $node['type'] ) {
-			case 'top_matter':
+			case $node_types['topMatter']:
 				$html .= render_top_matter_node( $node, $state, $render_options, $labels );
 				break;
-			case 'directive':
+			case $node_types['directive']:
 				$html .= render_directive_node( $node, $render_options, $labels );
 				break;
-			case 'comment':
+			case $node_types['comment']:
 				$html .= render_comment_node( $node, $labels );
 				break;
-			case 'section_start':
+			case $node_types['sectionStart']:
 				$section_label = '';
 
 				if ( '' !== $node['label'] ) {
@@ -686,22 +718,22 @@ function render_chordpro_document( array $document, array $options = array() ) :
 				$html .= '<div class="chordpro-section chordpro-' . escape_html( $node['sectionType'] ) . '">' . $section_label;
 				++$state['openSections'];
 				break;
-			case 'section_end':
+			case $node_types['sectionEnd']:
 				if ( $state['openSections'] > 0 ) {
 					$html .= '</div>';
 					--$state['openSections'];
 				}
 				break;
-			case 'tab_block':
+			case $node_types['tabBlock']:
 				$html .= '<pre class="chordpro-tab">' . escape_html( implode( "\n", $node['lines'] ) ) . '</pre>';
 				break;
-			case 'spacer':
+			case $node_types['spacer']:
 				$html .= '<div class="chordpro-spacer"></div>';
 				break;
-			case 'lyric_line':
+			case $node_types['lyricLine']:
 				$html .= '<div class="chordpro-line"><p class="chordpro-lyric chordpro-lyric-plain">' . escape_html( $node['text'] ) . '</p></div>';
 				break;
-			case 'chord_line':
+			case $node_types['chordLine']:
 				$html .= render_chord_line_node( $node );
 				break;
 		}

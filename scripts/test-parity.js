@@ -75,23 +75,12 @@ fixtures.forEach( ( fixture, index ) => {
 		} );
 	}
 
-	fixture.expected.htmlIncludes.forEach( ( fragment ) => {
-		if ( ! phpFixture.html.includes( fragment ) ) {
-			mismatches.push( {
-				name: fixture.name,
-				reason: `Expected HTML to include "${ fragment }".`,
-			} );
-		}
-	} );
-
-	fixture.expected.htmlExcludes.forEach( ( fragment ) => {
-		if ( phpFixture.html.includes( fragment ) ) {
-			mismatches.push( {
-				name: fixture.name,
-				reason: `Expected HTML to exclude "${ fragment }".`,
-			} );
-		}
-	} );
+	if ( phpFixture.html !== fixture.expected.html ) {
+		mismatches.push( {
+			name: fixture.name,
+			reason: 'Rendered HTML does not match the shared fixture snapshot.',
+		} );
+	}
 } );
 
 if ( mismatches.length ) {
