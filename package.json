@@ -6,6 +6,9 @@
 		"build": "wp-scripts build",
 		"start": "wp-scripts start",
 		"lint:js": "wp-scripts lint-js",
+		"test": "npm run test:unit && npm run test:parity",
+		"test:parity": "node scripts/test-parity.js",
+		"test:unit": "wp-scripts test-unit-js --runInBand",
 		"packages-update": "wp-scripts packages-update"
 	},
 	"devDependencies": {
