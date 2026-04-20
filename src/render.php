@@ -63,23 +63,13 @@ if ( 'roboto' === $font_family ) {
 	$font_class = 'chordpro-font-martian';
 }
 
-$labels = array(
-	'verse'             => __( 'Verse', 'chordpro-block' ),
-	'chorus'            => __( 'Chorus', 'chordpro-block' ),
-	'bridge'            => __( 'Bridge', 'chordpro-block' ),
-	'keyLabel'          => _x( 'Key', 'musical key label', 'chordpro-block' ),
-	'capoLabel'         => _x( 'Capo', 'guitar capo position', 'chordpro-block' ),
-	'tempo'             => __( 'Tempo', 'chordpro-block' ),
-	'time'              => __( 'Time', 'chordpro-block' ),
-	'duration'          => __( 'Duration', 'chordpro-block' ),
-	'transpose'         => __( 'Transpose', 'chordpro-block' ),
-	'transposeChords'   => __( 'Transpose chords', 'chordpro-block' ),
-	'lowerSemitone'     => __( 'Lower one semitone', 'chordpro-block' ),
-	'raiseSemitone'     => __( 'Raise one semitone', 'chordpro-block' ),
-	'reset'             => __( 'Reset', 'chordpro-block' ),
-	'transposeOffset'   => __( 'Transpose offset 0 semitones', 'chordpro-block' ),
-	'songLyricsDefault' => __( 'Song Lyrics', 'chordpro-block' ),
-);
+$labels = array();
+
+foreach ( \ChordProBlock\Parser\get_label_definitions() as $key => $definition ) {
+	$labels[ $key ] = '_x' === ( $definition['function'] ?? '__' )
+		? _x( $definition['text'], $definition['context'] ?? '', 'chordpro-block' )
+		: __( $definition['text'], 'chordpro-block' );
+}
 
 $document     = \ChordProBlock\Parser\parse_chordpro_document( $raw_content );
 $song_html    = \ChordProBlock\Parser\render_chordpro_document(

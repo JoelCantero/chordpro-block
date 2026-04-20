@@ -3,11 +3,17 @@
 	"version": "1.0.0",
 	"description": "WordPress Gutenberg block for ChordPro song notation",
 	"scripts": {
+		"generate:spec": "node scripts/generate-chordpro-spec.js",
+		"prebuild": "npm run generate:spec",
 		"build": "wp-scripts build",
+		"prestart": "npm run generate:spec",
 		"start": "wp-scripts start",
+		"prelint:js": "npm run generate:spec",
 		"lint:js": "wp-scripts lint-js",
 		"test": "npm run test:unit && npm run test:parity",
+		"pretest:parity": "npm run generate:spec",
 		"test:parity": "node scripts/test-parity.js",
+		"pretest:unit": "npm run generate:spec",
 		"test:unit": "wp-scripts test-unit-js --runInBand",
 		"packages-update": "wp-scripts packages-update"
 	},

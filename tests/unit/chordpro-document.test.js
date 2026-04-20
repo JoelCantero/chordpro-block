@@ -36,12 +36,6 @@ describe( 'ChordPro document fixtures', () => {
 			fixture.expected.nodeTypes
 		);
 
-		fixture.expected.htmlIncludes.forEach( ( fragment ) => {
-			expect( html ).toContain( fragment );
-		} );
-
-		fixture.expected.htmlExcludes.forEach( ( fragment ) => {
-			expect( html ).not.toContain( fragment );
-		} );
+		expect( html ).toBe( fixture.expected.html );
 	} );
 } );

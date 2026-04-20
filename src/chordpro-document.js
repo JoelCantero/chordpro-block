@@ -1,25 +1,19 @@
-import { __, _x } from '@wordpress/i18n';
+import {
+	getChordProSpec,
+	getChordTokenRegExp,
+	getDirectiveLineRegExp,
+	getSectionLabelPrefixRegExp,
+	getStructuralDirectiveRegExp,
+} from './chordpro-spec';
 import { isTransposableChord } from './chordpro-transpose';
+import { getGeneratedChordProLabels } from './generated/chordpro-labels';
 
-const STRUCTURAL_DIRECTIVE_RE =
-	/^[{\[]\s*((?:start_of_|end_of_)(?:verse|chorus|bridge|tab)|sov|eov|soc|eoc|sob|eob|sot|eot)(?:\s*:\s*[^}\]]*)?\s*[}\]]$/i;
-const DIRECTIVE_LINE_RE = /^\{([^}]+)\}$/;
-const CHORD_TOKEN_RE = /\[[^\]]+\]/;
-
-const TOP_MATTER_KEYS = [
-	'title',
-	't',
-	'subtitle',
-	'st',
-	'artist',
-	'composer',
-	'lyricist',
-	'tempo',
-	'key',
-	'capo',
-	'time',
-	'duration',
-];
+const SPEC = getChordProSpec();
+const NODE_TYPES = SPEC.document.nodeTypes;
+const STRUCTURAL_DIRECTIVE_RE = getStructuralDirectiveRegExp( SPEC );
+const DIRECTIVE_LINE_RE = getDirectiveLineRegExp( SPEC );
+const CHORD_TOKEN_RE = getChordTokenRegExp( SPEC );
+const SECTION_LABEL_PREFIX_RE = getSectionLabelPrefixRegExp( SPEC );
 
 function escapeHtml( text ) {
 	return String( text )
@@ -28,6 +22,18 @@ function escapeHtml( text ) {
 		.replace( />/g, '&gt;' )
 		.replace( /"/g, '&quot;' )
 		.replace( /'/g, '&#039;' );
+}
+
+function getTopMatterItem( key ) {
+	return SPEC.topMatter.items[ key ] || null;
+}
+
+function getDirectiveNodeConfig( key ) {
+	return SPEC.directiveNodes[ key ] || null;
+}
+
+function getDirectiveRenderConfig( key ) {
+	return SPEC.render.directiveNodes[ key ] || null;
 }
 
 function getDirectiveParts( raw ) {
@@ -59,51 +65,19 @@ function extractStructuralDirective( line ) {
 }
 
 function normalizeTopMatterKey( key ) {
-	switch ( key ) {
-		case 't':
-			return 'title';
-		case 'st':
-			return 'subtitle';
-		default:
-			return key;
-	}
+	return getTopMatterItem( key )?.canonicalKey || key;
 }
 
 function isTopMatterDirectiveKey( key ) {
-	return TOP_MATTER_KEYS.includes( key );
+	return !! getTopMatterItem( key );
 }
 
 function isMetaRowDirectiveKey( key ) {
-	return [ 'tempo', 'key', 'capo', 'time', 'duration' ].includes(
-		normalizeTopMatterKey( key )
-	);
+	return getTopMatterItem( key )?.group === 'meta_row';
 }
 
 function getTopMatterPriority( key ) {
-	switch ( normalizeTopMatterKey( key ) ) {
-		case 'title':
-			return 0;
-		case 'subtitle':
-			return 1;
-		case 'artist':
-			return 2;
-		case 'composer':
-			return 3;
-		case 'lyricist':
-			return 4;
-		case 'tempo':
-			return 5;
-		case 'key':
-			return 6;
-		case 'capo':
-			return 7;
-		case 'time':
-			return 8;
-		case 'duration':
-			return 9;
-		default:
-			return 100;
-	}
+	return getTopMatterItem( key )?.priority ?? 100;
 }
 
 function hasChordTokens( line ) {
@@ -176,7 +150,7 @@ function parseChordLine( line ) {
 	}
 
 	return {
-		type: 'chord_line',
+		type: NODE_TYPES.chordLine,
 		lyricText,
 		accessibleText: buildAccessibleChordLine( leadingText, segments ),
 		markers,
@@ -188,34 +162,14 @@ function parseChordLine( line ) {
 
 function createEmptyDocument() {
 	return {
-		meta: {
-			title: '',
-			subtitle: '',
-			artist: '',
-			composer: '',
-			lyricist: '',
-			key: '',
-			lyrics: '',
-		},
-		features: {
-			hasChords: false,
-			hasTransposableChords: false,
-		},
+		meta: { ...SPEC.document.metaDefaults },
+		features: { ...SPEC.document.featureDefaults },
 		nodes: [],
 	};
 }
 
 function assignMetaValue( document, key, value ) {
-	const metaKey = {
-		title: 'title',
-		t: 'title',
-		subtitle: 'subtitle',
-		st: 'subtitle',
-		artist: 'artist',
-		composer: 'composer',
-		lyricist: 'lyricist',
-		key: 'key',
-	}[ key ];
+	const metaKey = getTopMatterItem( key )?.metaKey;
 
 	if ( ! metaKey || document.meta[ metaKey ] ) {
 		return;
@@ -236,101 +190,58 @@ function flushTopMatter( parserState ) {
 	}
 
 	parserState.document.nodes.push( {
-		type: 'top_matter',
+		type: NODE_TYPES.topMatter,
 		items: [ ...parserState.pendingTopMatter ],
 	} );
 }
 
 function getSectionType( key ) {
-	switch ( key ) {
-		case 'start_of_chorus':
-		case 'soc':
-			return 'chorus';
-		case 'start_of_verse':
-		case 'sov':
-			return 'verse';
-		case 'start_of_bridge':
-		case 'sob':
-			return 'bridge';
-		default:
-			return null;
-	}
+	return SPEC.structuralDirectives.sectionStarts[ key ] || null;
 }
 
 function isSectionEndKey( key ) {
-	return [
-		'end_of_chorus',
-		'eoc',
-		'end_of_verse',
-		'eov',
-		'end_of_bridge',
-		'eob',
-	].includes( key );
+	return SPEC.structuralDirectives.sectionEnds.includes( key );
+}
+
+function isTabStartKey( key ) {
+	return SPEC.structuralDirectives.tabs.starts.includes( key );
+}
+
+function isTabEndKey( key ) {
+	return SPEC.structuralDirectives.tabs.ends.includes( key );
 }
 
 function createDirectiveNode( key, value ) {
-	switch ( key ) {
-		case 'title':
-		case 't':
-		case 'subtitle':
-		case 'st':
-		case 'artist':
-		case 'composer':
-		case 'lyricist':
-		case 'tempo':
-		case 'key':
-		case 'capo':
-		case 'time':
-		case 'duration':
-			return {
-				type: 'directive',
-				key,
-				value,
-			};
-		case 'comment':
-		case 'c':
-			return {
-				type: 'comment',
-				variant: 'comment',
-				value,
-			};
-		case 'chorus':
-		case 'verse':
-		case 'bridge':
-			return {
-				type: 'comment',
-				variant: key,
-				value: '',
-			};
-		default:
-			return null;
+	const config = getDirectiveNodeConfig( key );
+
+	if ( ! config ) {
+		return null;
 	}
+
+	if ( config.type === NODE_TYPES.directive ) {
+		return {
+			type: NODE_TYPES.directive,
+			key,
+			value,
+		};
+	}
+
+	return {
+		type: NODE_TYPES.comment,
+		variant: config.variant,
+		value: config.includeValue === false ? '' : value,
+	};
 }
 
 export function getChordProLabels() {
-	return {
-		verse: __( 'Verse', 'chordpro-block' ),
-		chorus: __( 'Chorus', 'chordpro-block' ),
-		bridge: __( 'Bridge', 'chordpro-block' ),
-		keyLabel: _x( 'Key', 'musical key label', 'chordpro-block' ),
-		capoLabel: _x( 'Capo', 'guitar capo position', 'chordpro-block' ),
-		tempo: __( 'Tempo', 'chordpro-block' ),
-		time: __( 'Time', 'chordpro-block' ),
-		duration: __( 'Duration', 'chordpro-block' ),
-		transpose: __( 'Transpose', 'chordpro-block' ),
-		transposeChords: __( 'Transpose chords', 'chordpro-block' ),
-		lowerSemitone: __( 'Lower one semitone', 'chordpro-block' ),
-		raiseSemitone: __( 'Raise one semitone', 'chordpro-block' ),
-		reset: __( 'Reset', 'chordpro-block' ),
-		transposeOffset: __( 'Transpose offset 0 semitones', 'chordpro-block' ),
-	};
+	return getGeneratedChordProLabels();
 }
 
 export function translateSectionLabelPrefix(
 	value,
 	labels = getChordProLabels()
 ) {
-	const match = value.match( /^(verse|chorus|bridge)(\b.*)$/i );
+	const match = value.match( SECTION_LABEL_PREFIX_RE );
 
 	if ( ! match ) {
 		return value;
@@ -363,7 +274,7 @@ export function createChordProDocument( text ) {
 		if ( structuralDirective ) {
 			const { key, value } = getDirectiveParts( structuralDirective );
 
-			if ( [ 'start_of_tab', 'sot' ].includes( key ) ) {
+			if ( isTabStartKey( key ) ) {
 				flushTopMatter( parserState );
 
 				const tabLines = [];
@@ -381,11 +292,7 @@ export function createChordProDocument( text ) {
 						const endDirectiveParts =
 							getDirectiveParts( maybeEndDirective );
 
-						if (
-							[ 'end_of_tab', 'eot' ].includes(
-								endDirectiveParts.key
-							)
-						) {
+						if ( isTabEndKey( endDirectiveParts.key ) ) {
 							index = cursor;
 							break;
 						}
@@ -399,7 +306,7 @@ export function createChordProDocument( text ) {
 				}
 
 				document.nodes.push( {
-					type: 'tab_block',
+					type: NODE_TYPES.tabBlock,
 					lines: tabLines,
 				} );
 				continue;
@@ -411,7 +318,7 @@ export function createChordProDocument( text ) {
 				flushTopMatter( parserState );
 				parserState.sectionStack.push( sectionType );
 				document.nodes.push( {
-					type: 'section_start',
+					type: NODE_TYPES.sectionStart,
 					sectionType,
 					label: value,
 				} );
@@ -423,7 +330,7 @@ export function createChordProDocument( text ) {
 
 				if ( parserState.sectionStack.length > 0 ) {
 					document.nodes.push( {
-						type: 'section_end',
+						type: NODE_TYPES.sectionEnd,
 						sectionType: parserState.sectionStack.pop(),
 					} );
 				}
@@ -469,7 +376,7 @@ export function createChordProDocument( text ) {
 		if ( line.trim() === '' ) {
 			flushTopMatter( parserState );
 			document.nodes.push( {
-				type: 'spacer',
+				type: NODE_TYPES.spacer,
 			} );
 			lyricsLines.push( '' );
 			continue;
@@ -491,7 +398,7 @@ export function createChordProDocument( text ) {
 
 		flushTopMatter( parserState );
 		document.nodes.push( {
-			type: 'lyric_line',
+			type: NODE_TYPES.lyricLine,
 			text: line,
 		} );
 		lyricsLines.push( line );
@@ -501,7 +408,7 @@ export function createChordProDocument( text ) {
 
 	while ( parserState.sectionStack.length > 0 ) {
 		document.nodes.push( {
-			type: 'section_end',
+			type: NODE_TYPES.sectionEnd,
 			sectionType: parserState.sectionStack.pop(),
 		} );
 	}
@@ -512,84 +419,84 @@ export function createChordProDocument( text ) {
 }
 
 function renderTransposeControlsMarkup( labels ) {
+	const config = SPEC.render.transposeControls;
+	const buttons = config.buttons
+		.map( ( button ) => {
+			const attributes = [
+				'type="button"',
+				`class="${ escapeHtml( button.className ) }"`,
+			];
+
+			if ( button.kind === 'change' ) {
+				attributes.push(
+					`data-transpose-change="${ escapeHtml( button.value ) }"`
+				);
+			} else if ( button.kind === 'reset' ) {
+				attributes.push( 'data-transpose-reset' );
+			}
+
+			if ( button.disabled ) {
+				attributes.push( 'disabled' );
+			}
+
+			attributes.push(
+				`aria-label="${ escapeHtml( labels[ button.labelKey ] ) }"`
+			);
+
+			const labelText = button.textLabelKey
+				? labels[ button.textLabelKey ]
+				: button.text;
+
+			return `<button ${ attributes.join( ' ' ) }>${ escapeHtml(
+				labelText
+			) }</button>`;
+		} )
+		.join( '' );
+	const display = config.display;
+
 	return `<div class="chordpro-transpose-controls" role="group" aria-label="${ escapeHtml(
-		labels.transposeChords
+		labels[ config.groupLabelKey ]
 	) }"><strong class="chordpro-meta-label">${ escapeHtml(
-		labels.transpose
-	) }:</strong><button type="button" class="chordpro-transpose-button" data-transpose-change="-1" aria-label="${ escapeHtml(
-		labels.lowerSemitone
-	) }">-</button><button type="button" class="chordpro-transpose-button" data-transpose-change="1" aria-label="${ escapeHtml(
-		labels.raiseSemitone
-	) }">+</button><button type="button" class="chordpro-transpose-reset" data-transpose-reset disabled>${ escapeHtml(
-		labels.reset
-	) }</button><span class="chordpro-transpose-value" data-transpose-display aria-live="polite" aria-atomic="true">${ escapeHtml(
-		'0'
+		labels[ config.titleLabelKey ]
+	) }:</strong>${ buttons }<span class="${ escapeHtml(
+		display.className
+	) }" data-transpose-display aria-live="${ escapeHtml(
+		display.ariaLive
+	) }" aria-atomic="${ escapeHtml( display.ariaAtomic ) }">${ escapeHtml(
+		display.initialValue
 	) }</span></div>`;
 }
 
 function renderDirectiveNode( node, options, labels ) {
-	switch ( node.key ) {
-		case 'title':
-		case 't':
-			if ( ! options.showTitle ) {
-				return '';
-			}
-			return `<div class="chordpro-title">${ escapeHtml(
-				node.value
-			) }</div>`;
-		case 'subtitle':
-		case 'st':
-			return `<div class="chordpro-subtitle">${ escapeHtml(
-				node.value
-			) }</div>`;
-		case 'artist':
-			if ( ! options.showArtist ) {
-				return '';
-			}
-			return `<div class="chordpro-artist">${ escapeHtml(
-				node.value
-			) }</div>`;
-		case 'composer':
-			return `<div class="chordpro-composer">${ escapeHtml(
-				node.value
-			) }</div>`;
-		case 'lyricist':
-			return `<div class="chordpro-lyricist">${ escapeHtml(
-				node.value
-			) }</div>`;
-		case 'key':
-			return `<div class="chordpro-meta"><strong class="chordpro-meta-label">${ escapeHtml(
-				labels.keyLabel
-			) }:</strong><span class="chordpro-meta-value" data-original-key="${ escapeHtml(
-				node.value
-			) }">${ escapeHtml( node.value ) }</span></div>`;
-		case 'capo':
-			return `<div class="chordpro-meta"><strong class="chordpro-meta-label">${ escapeHtml(
-				labels.capoLabel
-			) }:</strong><span class="chordpro-meta-value">${ escapeHtml(
-				node.value
-			) }</span></div>`;
-		case 'tempo':
-			return `<div class="chordpro-meta"><strong class="chordpro-meta-label">${ escapeHtml(
-				labels.tempo
-			) }:</strong><span class="chordpro-meta-value">${ escapeHtml(
-				node.value
-			) }</span></div>`;
-		case 'time':
-			return `<div class="chordpro-meta"><strong class="chordpro-meta-label">${ escapeHtml(
-				labels.time
-			) }:</strong><span class="chordpro-meta-value">${ escapeHtml(
-				node.value
-			) }</span></div>`;
-		case 'duration':
-			return `<div class="chordpro-meta"><strong class="chordpro-meta-label">${ escapeHtml(
-				labels.duration
-			) }:</strong><span class="chordpro-meta-value">${ escapeHtml(
-				node.value
-			) }</span></div>`;
-		default:
-			return '';
+	const config = getDirectiveRenderConfig( node.key );
+
+	if ( ! config ) {
+		return '';
 	}
+
+	if ( config.option && ! options[ config.option ] ) {
+		return '';
+	}
+
+	if ( config.kind === 'text' ) {
+		return `<div class="${ escapeHtml( config.className ) }">${ escapeHtml(
+			node.value
+		) }</div>`;
+	}
+
+	if ( config.kind === 'meta' ) {
+		const dataAttribute = config.dataAttribute
+			? ` ${ config.dataAttribute }="${ escapeHtml( node.value ) }"`
+			: '';
+
+		return `<div class="chordpro-meta"><strong class="chordpro-meta-label">${ escapeHtml(
+			labels[ config.labelKey ]
+		) }:</strong><span class="chordpro-meta-value"${ dataAttribute }>${ escapeHtml(
+			node.value
+		) }</span></div>`;
+	}
+
+	return '';
 }
 
 function renderTopMatterNode( node, state, options, labels ) {
@@ -603,7 +510,7 @@ function renderTopMatterNode( node, state, options, labels ) {
 	items.forEach( ( item ) => {
 		const rendered = renderDirectiveNode(
 			{
-				type: 'directive',
+				type: NODE_TYPES.directive,
 				key: item.key,
 				value: item.value,
 			},
@@ -690,7 +597,7 @@ export function renderChordProDocument( document, options = {} ) {
 
 	document.nodes.forEach( ( node ) => {
 		switch ( node.type ) {
-			case 'top_matter':
+			case NODE_TYPES.topMatter:
 				html += renderTopMatterNode(
 					node,
 					state,
@@ -698,13 +605,13 @@ export function renderChordProDocument( document, options = {} ) {
 					labels
 				);
 				break;
-			case 'directive':
+			case NODE_TYPES.directive:
 				html += renderDirectiveNode( node, renderOptions, labels );
 				break;
-			case 'comment':
+			case NODE_TYPES.comment:
 				html += renderCommentNode( node, labels );
 				break;
-			case 'section_start': {
+			case NODE_TYPES.sectionStart: {
 				const sectionLabel = node.label
 					? `<div class="chordpro-section-label">${ escapeHtml(
 							translateSectionLabelPrefix( node.label, labels )
@@ -717,26 +624,26 @@ export function renderChordProDocument( document, options = {} ) {
 				state.openSections += 1;
 				break;
 			}
-			case 'section_end':
+			case NODE_TYPES.sectionEnd:
 				if ( state.openSections > 0 ) {
 					html += '</div>';
 					state.openSections -= 1;
 				}
 				break;
-			case 'tab_block':
+			case NODE_TYPES.tabBlock:
 				html += `<pre class="chordpro-tab">${ escapeHtml(
 					node.lines.join( '\n' )
 				) }</pre>`;
 				break;
-			case 'spacer':
+			case NODE_TYPES.spacer:
 				html += '<div class="chordpro-spacer"></div>';
 				break;
-			case 'lyric_line':
+			case NODE_TYPES.lyricLine:
 				html += `<div class="chordpro-line"><p class="chordpro-lyric chordpro-lyric-plain">${ escapeHtml(
 					node.text
 				) }</p></div>`;
 				break;
-			case 'chord_line':
+			case NODE_TYPES.chordLine:
 				html += renderChordLineNode( node );
 				break;
 		}
